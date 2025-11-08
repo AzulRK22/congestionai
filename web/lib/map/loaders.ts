@@ -1,49 +1,94 @@
-let gPromise: Promise<void> | null = null;
-export function loadGoogleMaps(
+// web/lib/map/loaders.ts
+import { Loader } from "@googlemaps/js-api-loader";
+
+/** -----------------------
+ * Google Maps JS API (importLibrary)
+ * --------------------- */
+let gLoader: Loader | null = null;
+let gInitPromise: Promise<void> | null = null;
+
+export async function loadGoogleMaps(
   apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY!,
 ) {
-  if (typeof window === "undefined") return Promise.resolve();
-  if ((window as any).google?.maps) return Promise.resolve();
-  if (gPromise) return gPromise;
+  if (typeof window === "undefined") return;
 
-  gPromise = new Promise((resolve, reject) => {
-    const s = document.createElement("script");
-    // 👉 incluye loading=async para evitar el warning de performance
-    const params = new URLSearchParams({
-      key: apiKey,
-      libraries: "geometry,places",
-      loading: "async",
+  // Ya disponible
+  if ((window as any).google?.maps?.Map) return;
+
+  if (!apiKey)
+    throw new Error("Falta NEXT_PUBLIC_GOOGLE_MAPS_API_KEY en .env.local");
+
+  if (!gLoader) {
+    gLoader = new Loader({
+      apiKey,
+      version: "weekly",
+      language: "es",
+      region: "MX",
     });
-    s.src = `https://maps.googleapis.com/maps/api/js?${params.toString()}`;
-    s.async = true;
-    s.defer = true;
-    s.onload = () => resolve();
-    s.onerror = reject;
-    document.head.appendChild(s);
-  });
+  }
 
-  return gPromise;
+  if (!gInitPromise) {
+    gInitPromise = (async () => {
+      // Carga librerías necesarias; Directions está en 'routes'
+      // @ts-ignore - importLibrary tipos nuevos
+      await gLoader!.importLibrary("maps");
+      // @ts-ignore
+      await gLoader!.importLibrary("routes");
+      // @ts-ignore
+      await gLoader!.importLibrary("places");
+      // geometry queda disponible cuando cargas 'maps' en versiones recientes,
+      // si la necesitas estricta, puedes agregar:
+      // // @ts-ignore
+      // await gLoader!.importLibrary("geometry");
+    })();
+  }
+
+  await gInitPromise;
 }
 
+/** -----------------------
+ * Apple MapKit JS (idempotente)
+ * --------------------- */
 let aPromise: Promise<void> | null = null;
+
 export function loadMapKit(token: string) {
   if (typeof window === "undefined") return Promise.resolve();
-  if ((window as any).mapkit?.init) return Promise.resolve();
+
+  const w = window as any;
+  if (w.mapkit && w.__MAPKIT_INITED__) return Promise.resolve();
   if (aPromise) return aPromise;
+  if (!token)
+    return Promise.reject(new Error("Falta NEXT_PUBLIC_MAPKIT_TOKEN"));
+
   aPromise = new Promise((resolve, reject) => {
-    const s = document.createElement("script");
-    s.src = "https://cdn.apple-mapkit.com/mk/5.x.x/mapkit.js";
-    s.async = true;
-    s.defer = true;
-    s.onload = () => {
-      (window as any).mapkit.init({
-        authorizationCallback: (done: (t: string) => void) => done(token),
-        language: "es",
-      });
-      resolve();
+    const onReady = () => {
+      try {
+        if (!w.__MAPKIT_INITED__) {
+          w.mapkit.init({
+            authorizationCallback: (done: (t: string) => void) => done(token),
+            language: "es",
+          });
+          w.__MAPKIT_INITED__ = true;
+        }
+        resolve();
+      } catch (e) {
+        reject(e);
+      }
     };
-    s.onerror = reject;
-    document.head.appendChild(s);
+
+    if (!document.getElementById("apple-mapkit")) {
+      const s = document.createElement("script");
+      s.id = "apple-mapkit";
+      s.src = "https://cdn.apple-mapkit.com/mk/5.x.x/mapkit.js";
+      s.async = true;
+      s.defer = true;
+      s.onload = onReady;
+      s.onerror = reject;
+      document.head.appendChild(s);
+    } else {
+      onReady();
+    }
   });
+
   return aPromise;
 }

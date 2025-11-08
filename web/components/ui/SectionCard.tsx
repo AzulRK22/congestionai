@@ -9,12 +9,10 @@ export function SectionCard({
 }: {
   children: React.ReactNode;
   className?: string;
-  /** true = sin animación (útil para MapContainer) */
   staticCard?: boolean;
 }) {
-  if (staticCard) {
+  if (staticCard)
     return <div className={`card p-4 ${className}`}>{children}</div>;
-  }
   return (
     <motion.div
       initial={{ opacity: 0, y: 6 }}

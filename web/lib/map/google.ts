@@ -22,7 +22,6 @@ export class GoogleMapProvider implements MapProvider {
   async setRoute(origin: string, destination: string, polyline?: LatLng[]) {
     if (this.routeLine) this.routeLine.setMap(null);
 
-    // Si ya traes polyline, pinto y ajusto bounds
     if (polyline?.length) {
       this.routeLine = new google.maps.Polyline({
         path: polyline,
@@ -39,42 +38,40 @@ export class GoogleMapProvider implements MapProvider {
 
     if (!this.directions) return;
 
-    await new Promise<void>((resolve) => {
-      this.directions!.route(
-        {
-          origin,
-          destination,
-          travelMode: google.maps.TravelMode.DRIVING,
-          drivingOptions: {
-            departureTime: new Date(),
-            trafficModel: google.maps.TrafficModel.BEST_GUESS,
-          },
+    this.directions.route(
+      {
+        origin,
+        destination,
+        travelMode: google.maps.TravelMode.DRIVING,
+        drivingOptions: {
+          departureTime: new Date(),
+          trafficModel: google.maps.TrafficModel.BEST_GUESS,
         },
-        (result, status) => {
-          if (
-            status !== google.maps.DirectionsStatus.OK ||
-            !result?.routes?.[0]
-          ) {
-            // No rompas el demo si Directions falla
-            return resolve();
-          }
-          const route = result.routes[0];
-          const path = route.overview_path;
-          this.routeLine = new google.maps.Polyline({
-            path,
-            strokeColor: "#111",
-            strokeOpacity: 0.9,
-            strokeWeight: 4,
-          });
-          this.routeLine.setMap(this.map);
+      },
+      (result, status) => {
+        if (
+          status !== google.maps.DirectionsStatus.OK ||
+          !result?.routes?.[0]
+        ) {
+          // No dibujes nada si falla (evita crash)
+          return;
+        }
+        const route = result.routes[0];
+        const path = route.overview_path;
 
-          const bounds = new google.maps.LatLngBounds();
-          path.forEach((p: any) => bounds.extend(p));
-          this.map.fitBounds(bounds, 48);
-          resolve();
-        },
-      );
-    });
+        this.routeLine = new google.maps.Polyline({
+          path,
+          strokeColor: "#111",
+          strokeOpacity: 0.9,
+          strokeWeight: 4,
+        });
+        this.routeLine.setMap(this.map);
+
+        const bounds = new google.maps.LatLngBounds();
+        path.forEach((p: any) => bounds.extend(p));
+        this.map.fitBounds(bounds, 48);
+      },
+    );
   }
 
   setMarkers(_points: LatLng[]) {
