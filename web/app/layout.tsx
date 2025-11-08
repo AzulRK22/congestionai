@@ -17,9 +17,7 @@ export default function RootLayout({
 }) {
   return (
     <html lang="es">
-      <body
-        className={`${inter.className} min-h-screen bg-gradient-to-br from-white to-slate-50 text-slate-900`}
-      >
+      <body className={`${inter.className} min-h-screen text-slate-900`}>
         <header className="sticky top-0 z-10 backdrop-blur bg-white/70 border-b">
           <div className="mx-auto max-w-3xl px-4 py-3 flex items-center justify-between">
             <Link
@@ -28,14 +26,10 @@ export default function RootLayout({
             >
               CongestionAI
             </Link>
-            <div className="text-xs text-slate-500">
-              1-clic para evitar tráfico
-            </div>
+            <span className="badge badge-warn">Beta</span>
           </div>
         </header>
-
         <main className="mx-auto max-w-3xl px-4 pb-24">{children}</main>
-
         <BottomNav />
       </body>
     </html>

@@ -1,49 +1,41 @@
 // web/lib/map/loaders.ts
-import { Loader } from "@googlemaps/js-api-loader";
 
 /** -----------------------
- * Google Maps JS API (importLibrary)
+ * Google Maps JS API (script tag)
  * --------------------- */
-let gLoader: Loader | null = null;
-let gInitPromise: Promise<void> | null = null;
+let gPromise: Promise<void> | null = null;
 
 export async function loadGoogleMaps(
   apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY!,
 ) {
   if (typeof window === "undefined") return;
-
-  // Ya disponible
+  // ya cargado
   if ((window as any).google?.maps?.Map) return;
-
   if (!apiKey)
     throw new Error("Falta NEXT_PUBLIC_GOOGLE_MAPS_API_KEY en .env.local");
+  if (gPromise) return gPromise;
 
-  if (!gLoader) {
-    gLoader = new Loader({
-      apiKey,
-      version: "weekly",
-      language: "es",
-      region: "MX",
+  gPromise = new Promise((resolve, reject) => {
+    const s = document.createElement("script");
+    // Librerías que usamos: maps (mapa), routes (Directions) y places (Autocomplete)
+    const params = new URLSearchParams({
+      key: apiKey,
+      libraries: "maps,routes,places",
+      v: "weekly",
+      loading: "async",
+      // optional: language/region si quieres
+      // language: "es",
+      // region: "MX",
     });
-  }
+    s.src = `https://maps.googleapis.com/maps/api/js?${params.toString()}`;
+    s.async = true;
+    s.defer = true;
+    s.onload = () => resolve();
+    s.onerror = reject;
+    document.head.appendChild(s);
+  });
 
-  if (!gInitPromise) {
-    gInitPromise = (async () => {
-      // Carga librerías necesarias; Directions está en 'routes'
-      // @ts-ignore - importLibrary tipos nuevos
-      await gLoader!.importLibrary("maps");
-      // @ts-ignore
-      await gLoader!.importLibrary("routes");
-      // @ts-ignore
-      await gLoader!.importLibrary("places");
-      // geometry queda disponible cuando cargas 'maps' en versiones recientes,
-      // si la necesitas estricta, puedes agregar:
-      // // @ts-ignore
-      // await gLoader!.importLibrary("geometry");
-    })();
-  }
-
-  await gInitPromise;
+  await gPromise;
 }
 
 /** -----------------------

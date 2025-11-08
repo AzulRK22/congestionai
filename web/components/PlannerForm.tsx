@@ -1,7 +1,8 @@
 "use client";
 import { useState } from "react";
-import { TextField } from "@/components/ui/TextField";
 import { Button } from "@/components/ui/Button";
+import { ArrowUpDown } from "lucide-react";
+import { AutocompleteInput } from "@/components/AutocompleteInput";
 
 export function PlannerForm({
   initialOrigin = "",
@@ -16,6 +17,12 @@ export function PlannerForm({
   const [dest, setDest] = useState(initialDestination);
   const valid = origin.trim().length > 2 && dest.trim().length > 2;
 
+  function swap() {
+    const o = origin;
+    setOrigin(dest);
+    setDest(o);
+  }
+
   return (
     <form
       className="grid gap-3"
@@ -24,20 +31,33 @@ export function PlannerForm({
         if (valid) onSubmit(origin.trim(), dest.trim());
       }}
     >
-      <TextField
+      <AutocompleteInput
         placeholder="Origen"
         value={origin}
-        onChange={(e) => setOrigin(e.target.value)}
+        onChange={setOrigin}
+        allowMyLocation
       />
-      <TextField
+      <AutocompleteInput
         placeholder="Destino"
         value={dest}
-        onChange={(e) => setDest(e.target.value)}
+        onChange={setDest}
       />
-      <div>
-        <Button disabled={!valid}>Planear</Button>
+
+      <div className="flex items-center gap-2">
+        <Button type="submit" disabled={!valid}>
+          Planear
+        </Button>
+        <button
+          type="button"
+          onClick={swap}
+          className="btn btn-outline"
+          aria-label="Intercambiar"
+        >
+          <ArrowUpDown size={16} className="mr-2" /> Intercambiar
+        </button>
       </div>
-      <p className="mt-2 text-xs text-slate-500">
+
+      <p className="mt-1 text-xs text-slate-500">
         Tip: presiona <kbd>Enter</kbd> para planear.
       </p>
     </form>

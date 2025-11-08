@@ -1,4 +1,5 @@
 "use client";
+import { CalendarPlus, Share2, Bookmark } from "lucide-react";
 
 export function ResultCard({
   result,
@@ -9,6 +10,7 @@ export function ResultCard({
 }) {
   const t = new Date(result.best?.departAtISO);
   const tStr = t.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  const savingPct = (result.best?.savingVsNow * 100) | 0;
 
   function addICS() {
     const start = new Date(result.best.departAtISO);
@@ -33,7 +35,7 @@ export function ResultCard({
   }
 
   function share() {
-    const msg = `Salgo ${tStr}. ETA ~${result.best.etaMin} min (ahorro ${(result.best.savingVsNow * 100) | 0}%) – CongestionAI`;
+    const msg = `Salgo ${tStr}. ETA ~${result.best.etaMin} min (ahorro ${savingPct}%) – CongestionAI`;
     if (navigator.share)
       navigator
         .share({ text: msg })
@@ -42,37 +44,52 @@ export function ResultCard({
   }
 
   return (
-    <div>
-      <div className="text-xl font-semibold">
-        Sal {tStr} · ETA {result.best?.etaMin} min · Ahorro{" "}
-        {(result.best?.savingVsNow * 100) | 0}%
+    <div className="grid gap-3">
+      <div className="flex items-end justify-between">
+        <div>
+          <div className="text-sm text-slate-500">Mejor salida</div>
+          <div className="text-4xl font-semibold leading-none">{tStr}</div>
+        </div>
+        <div className="text-right">
+          <div className="badge badge-ok">Ahorro {savingPct}%</div>
+          <div className="text-sm text-slate-600 mt-1">
+            ETA {result.best?.etaMin} min
+          </div>
+        </div>
       </div>
-      <div className="mt-3 flex gap-2 flex-wrap">
+
+      <div className="mt-2 flex gap-2 flex-wrap">
         <button onClick={addICS} className="btn btn-outline">
-          Add to Calendar
+          <CalendarPlus size={16} className="mr-2" /> Add to Calendar
         </button>
         <button onClick={share} className="btn btn-outline">
-          Compartir
+          <Share2 size={16} className="mr-2" /> Compartir
         </button>
         <button onClick={onSave} className="btn btn-outline">
-          Guardar en History
+          <Bookmark size={16} className="mr-2" /> Guardar en History
         </button>
       </div>
-      <div className="mt-4 text-sm text-slate-600">
-        Alternativas:
-        <ul className="list-disc pl-5">
-          {result.alternatives?.map((a: any, i: number) => (
-            <li key={i}>
-              {new Date(a.departAtISO).toLocaleTimeString([], {
-                hour: "2-digit",
-                minute: "2-digit",
-              })}{" "}
-              · ETA {a.etaMin} min (±4m)
-            </li>
-          ))}
-        </ul>
-      </div>
-      <p className="mt-2 text-xs text-slate-500">{result.notes?.join(" · ")}</p>
+
+      {result.alternatives?.length > 0 && (
+        <div className="mt-1">
+          <div className="text-sm font-medium">Alternativas cercanas</div>
+          <ul className="mt-1 grid gap-1 text-sm text-slate-600">
+            {result.alternatives.slice(0, 5).map((a: any, i: number) => (
+              <li key={i} className="flex justify-between">
+                <span>
+                  {new Date(a.departAtISO).toLocaleTimeString([], {
+                    hour: "2-digit",
+                    minute: "2-digit",
+                  })}
+                </span>
+                <span>ETA {a.etaMin} min</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      <p className="mt-1 text-xs text-slate-500">{result.notes?.join(" · ")}</p>
     </div>
   );
 }
