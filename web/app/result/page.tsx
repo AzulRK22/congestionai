@@ -121,6 +121,7 @@ export default function ResultPage() {
             provider={provider}
             origin={origin}
             destination={destination}
+            polylineEnc={data?.best?.polyline} // 👈 pásalo cuando exista
           />
         ) : (
           <div className="h-72 rounded-2xl border bg-slate-50 grid place-items-center text-sm text-slate-500">
