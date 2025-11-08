@@ -1,0 +1,11 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --bg: #0a0a0a;
+  --fg: #fafafa;
+}
+body { background:#fff; color:#0a0a0a; }
+.btn { @apply px-4 py-2 rounded bg-black text-white; }
+.card { @apply border rounded p-4; }
