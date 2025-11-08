@@ -22,3 +22,9 @@ build/
 .vercel
 .vscode/
 .idea/
+
+# app
+web/.env*
+.env*
+web/.next
+web/node_modules

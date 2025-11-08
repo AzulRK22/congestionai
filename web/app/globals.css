@@ -1,11 +1,38 @@
+/* stylelint-disable at-rule-no-unknown */
+/* Tailwind directives - processed by PostCSS/Tailwind CSS */
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+/* stylelint-enable at-rule-no-unknown */
 
+/* Tokens rápidos */
 :root {
-  --bg: #0a0a0a;
-  --fg: #fafafa;
+  --radius: 14px;
 }
-body { background:#fff; color:#0a0a0a; }
-.btn { @apply px-4 py-2 rounded bg-black text-white; }
-.card { @apply border rounded p-4; }
+.container-page {
+  @apply mx-auto max-w-3xl px-4;
+}
+.card {
+  @apply rounded-2xl border border-slate-200 bg-white/90 shadow-sm;
+}
+.btn {
+  @apply inline-flex items-center justify-center rounded-lg px-4 py-2 text-sm font-medium transition;
+}
+.btn-primary {
+  @apply bg-black text-white hover:bg-black/90 active:scale-[.99] disabled:bg-slate-300 disabled:text-slate-600;
+}
+.btn-outline {
+  @apply border border-slate-300 hover:bg-slate-50 text-slate-800;
+}
+.input {
+  @apply w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-400;
+}
+.badge {
+  @apply inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full;
+}
+.badge-ok {
+  @apply bg-green-100 text-green-700;
+}
+.badge-warn {
+  @apply bg-amber-100 text-amber-700;
+}
