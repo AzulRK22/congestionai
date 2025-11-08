@@ -1,0 +1,11 @@
+{
+  "name": "congestionai",
+  "private": true,
+  "packageManager": "pnpm@9.7.0",
+  "scripts": {
+    "dev": "pnpm --filter congestionai-web dev",
+    "build": "pnpm --filter congestionai-web build",
+    "start": "pnpm --filter congestionai-web start",
+    "lint": "pnpm --filter congestionai-web lint"
+  }
+}
