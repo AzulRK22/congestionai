@@ -1,19 +1,30 @@
-/* stylelint-disable at-rule-no-unknown */
-/* Tailwind directives - processed by PostCSS/Tailwind CSS */
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
-/* stylelint-enable at-rule-no-unknown */
 
-/* Tokens rápidos */
+/* Tokens */
 :root {
   --radius: 14px;
 }
+
+body {
+  background: radial-gradient(
+      600px 300px at 60% 0%,
+      rgba(2, 6, 23, 0.04),
+      transparent 60%
+    ),
+    linear-gradient(to bottom right, #ffffff, #f8fafc);
+}
+
+/* Primitives */
 .container-page {
   @apply mx-auto max-w-3xl px-4;
 }
 .card {
   @apply rounded-2xl border border-slate-200 bg-white/90 shadow-sm;
+}
+.input {
+  @apply w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-400;
 }
 .btn {
   @apply inline-flex items-center justify-center rounded-lg px-4 py-2 text-sm font-medium transition;
@@ -24,9 +35,6 @@
 .btn-outline {
   @apply border border-slate-300 hover:bg-slate-50 text-slate-800;
 }
-.input {
-  @apply w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-400;
-}
 .badge {
   @apply inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full;
 }
@@ -35,4 +43,28 @@
 }
 .badge-warn {
   @apply bg-amber-100 text-amber-700;
+}
+
+/* Nav underline activo */
+.nav-item {
+  @apply px-3 py-2 text-center hover:bg-slate-50 flex flex-col items-center gap-1 relative;
+}
+.nav-item-active {
+  @apply font-semibold text-slate-900;
+}
+.nav-item-active::after {
+  content: "";
+  @apply absolute bottom-0 left-1/2 -translate-x-1/2;
+  width: 28px;
+  height: 3px;
+  border-radius: 9999px;
+  background: #0f172a;
+}
+
+/* Sticky actions */
+.sticky-actions {
+  @apply fixed bottom-16 left-0 right-0;
+}
+.sticky-actions > div {
+  @apply mx-auto max-w-3xl px-4;
 }

@@ -22,7 +22,7 @@ export function BottomNav() {
             <Link
               key={href}
               href={href}
-              className={`px-3 py-2 text-center hover:bg-slate-50 flex flex-col items-center gap-1 ${active ? "font-semibold text-slate-900" : "text-slate-600"}`}
+              className={`nav-item ${active ? "nav-item-active" : "text-slate-600"}`}
             >
               <Icon size={18} />
               <span>{label}</span>

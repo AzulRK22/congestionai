@@ -1,64 +1,99 @@
+// app/api/analyze/route.ts
 import { NextRequest, NextResponse } from "next/server";
-import { PlanRequest, PlanResponse } from "@/lib/schema";
 
-// Simple 168-hour speed index (0..1). Weekday rush hours slower.
-const SPEED: number[] = Array.from({length:168}, (_,h)=>{
-  const dow = Math.floor(h/24), hod = h%24;
-  const rush = (hod>=7&&hod<=9)||(hod>=17&&hod<=19);
-  const weekend = (dow===5||dow===6);
-  let base = weekend ? 0.85 : 0.7;
-  if (rush && !weekend) base -= 0.28;
-  if (hod>=22||hod<=5) base += 0.15;
-  return Math.max(0.35, Math.min(0.95, base));
-});
-
-function distanceKmMock() { return 12.0; } // demo constant
-
-function etaMinutes(distanceKm:number, speedIndex:number) {
-  const freeflow = 60; // km/h
-  const kmh = Math.max(15, freeflow * speedIndex);
-  return Math.round((distanceKm / kmh) * 60);
-}
+const ROUTES_URL = "https://routes.googleapis.com/directions/v2:computeRoutes";
+// Field mask: solo lo necesario para abaratar
+const FM =
+  "routes.duration,routes.staticDuration,routes.travelAdvisory,routes.polyline.encodedPolyline";
 
 export async function POST(req: NextRequest) {
-  const body = await req.json();
-  const parse = PlanRequest.safeParse(body);
-  if (!parse.success) return NextResponse.json({error:"bad_request"}, {status:400});
-  const distanceKm = distanceKmMock();
-  const now = new Date();
-  const hourOfWeek = now.getDay()*24 + now.getHours();
-  const etaNow = etaMinutes(distanceKm, SPEED[hourOfWeek]);
+  const { origin, destination, window = "next120" } = await req.json();
+  if (!origin || !destination)
+    return NextResponse.json({ error: "missing params" }, { status: 400 });
 
-  // scan next 72h in 15-min steps
-  const cand: {t:Date, eta:number, how:number}[] = [];
-  const stepMin = 15;
-  for (let i=0;i<=72*60;i+=stepMin) {
-    const t = new Date(now.getTime()+i*60*1000);
-    const how = t.getDay()*24 + t.getHours();
-    cand.push({ t, eta: etaMinutes(distanceKm, SPEED[how]), how });
+  const apiKey =
+    process.env.GOOGLE_MAPS_API_KEY_SERVER ||
+    process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
+  if (!apiKey)
+    return NextResponse.json({ error: "no api key" }, { status: 500 });
+
+  // muestreamos cada 10 min (ajusta si quieres más fino)
+  const minutes = 120;
+  const step = 10;
+  const now = Date.now();
+  const samples: any[] = [];
+
+  for (let m = 0; m <= minutes; m += step) {
+    const departAt = new Date(now + m * 60_000).toISOString();
+    const body = {
+      origin: { address: origin },
+      destination: { address: destination },
+      travelMode: "DRIVE",
+      routingPreference: "TRAFFIC_AWARE_OPTIMAL",
+      departureTime: departAt,
+    };
+
+    const res = await fetch(ROUTES_URL + `?fields=${encodeURIComponent(FM)}`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Goog-Api-Key": apiKey!,
+        "X-Goog-FieldMask": FM,
+      },
+      body: JSON.stringify(body),
+    });
+
+    // si falla, sigue (no rompemos demo)
+    if (!res.ok) continue;
+    const json = await res.json();
+
+    const r = json.routes?.[0];
+    if (!r) continue;
+
+    const etaSec = toSec(r.duration || "0s");
+    const etaMin = Math.round(etaSec / 60);
+    samples.push({
+      m,
+      departAtISO: departAt,
+      etaMin,
+      polyline: r.polyline?.encodedPolyline || null,
+    });
   }
-  cand.sort((a,b)=>a.eta-b.eta);
-  const top = cand.slice(0,3);
 
-  const mk = (c:{t:Date,eta:number}) => ({
-    departAtISO: c.t.toISOString(),
-    etaMin: c.eta,
-    savingVsNow: Math.max(0, (etaNow - c.eta)/etaNow),
-    riskBand: [Math.max(0, c.eta-4), c.eta+4] as [number,number]
-  });
+  if (samples.length === 0)
+    return NextResponse.json({ error: "no routes" }, { status: 502 });
 
-  const heatmap = Array.from({length:168}, (_,h)=>({ hourOfWeek: h, risk: 1 - SPEED[h] }));
+  // mejor salida por ETA mínima
+  const best = samples.reduce((a, b) => (b.etaMin < a.etaMin ? b : a));
+  const nowEta = samples[0]?.etaMin ?? best.etaMin;
+  const savingVsNow = Math.max(0, (nowEta - best.etaMin) / Math.max(1, nowEta));
 
-  const resp: PlanResponse = {
-    best: mk(top[0]),
-    alternatives: top.slice(1).map(mk),
-    etaNow, distanceKm,
+  // heatmap sintético (0..1) a partir del ETA relativo
+  const maxEta = Math.max(...samples.map((s) => s.etaMin));
+  const heatmap = samples.map((s, i) => ({
+    hourOfWeek: i, // simplificado para demo
+    risk: s.etaMin / Math.max(1, maxEta),
+  }));
+
+  return NextResponse.json({
+    best: {
+      departAtISO: best.departAtISO,
+      etaMin: best.etaMin,
+      savingVsNow,
+      polyline: best.polyline,
+    },
+    alternatives: samples.slice(0, 6), // primeras 6 muestras a modo de ejemplo
     heatmap,
     notes: [
-      "Modelo horario con promedios; eventos locales pueden variar.",
-      "Sugerencias recalculadas por horas; rango ±4m de confianza."
-    ]
-  };
+      "Routes API traffic-aware",
+      "Muestreo cada 10m",
+      "FieldMask aplicado",
+    ],
+  });
+}
 
-  return NextResponse.json(resp);
+function toSec(str: string) {
+  // "3600s" → 3600
+  const m = /(\d+)s/.exec(str);
+  return m ? parseInt(m[1]) : 0;
 }
