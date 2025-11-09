@@ -6,6 +6,7 @@ import { SectionCard } from "@/components/ui/SectionCard";
 import { PlannerForm } from "@/components/PlannerForm";
 import { Heatmap } from "@/components/Heatmap";
 import { ResultCard } from "@/components/ResultCard";
+import { isHolidayISO } from "@/lib/events/holidays";
 import { MapContainer } from "@/components/MapContainer";
 import { StickyActions } from "@/components/StickyActions";
 import { saveHistoryItem } from "@/lib/storage";
@@ -105,7 +106,7 @@ export default function ResultClient() {
     prevCountryRef.current = s.country;
   }, []);
 
-  // si cambian settings en otra pestaña, nos actualizamos y limpiamos la cache
+  // reflect Settings changes across tabs & clear cache on country change
   useEffect(() => {
     const onStorage = (e: StorageEvent) => {
       if (e.key === "app_settings_v1") {
@@ -113,7 +114,7 @@ export default function ResultClient() {
         const prev = prevCountryRef.current;
         setSettings(s);
         if (prev && prev !== s.country) {
-          cacheClear(); // invalida resultados de otro país
+          cacheClear();
         }
         prevCountryRef.current = s.country;
       }
@@ -141,7 +142,7 @@ export default function ResultClient() {
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
-  // provider desde settings/localStorage
+  // provider from settings/localStorage
   useEffect(() => {
     const p = (localStorage.getItem("provider") as Provider) || "google";
     setProvider(p);
@@ -152,7 +153,7 @@ export default function ResultClient() {
     [originPayload, destinationPayload],
   );
 
-  // fetch + cache + protección de timestamp (offset mínimo 1 min)
+  // fetch + cache + protect against past timestamps
   useEffect(() => {
     if (!valid) {
       setData(null);
@@ -168,7 +169,7 @@ export default function ResultClient() {
       ot: avoidTollsQ,
       oh: avoidHighwaysQ,
       off: Math.max(offsetQ, 1),
-      ctry: country, // ← país en la clave de caché
+      ctry: country,
     });
 
     const cached = cacheGet(key);
@@ -193,7 +194,7 @@ export default function ResultClient() {
           refine: refineQ,
           avoidTolls: avoidTollsQ,
           avoidHighways: avoidHighwaysQ,
-          country, // ← se manda al backend
+          country,
         };
 
         const res = await fetch("/api/analyze", {
@@ -246,10 +247,10 @@ export default function ResultClient() {
     avoidTollsQ,
     avoidHighwaysQ,
     offsetQ,
-    country, // ← depende del país
+    country,
   ]);
 
-  // Acciones 1-clic
+  // quick actions
   const handleAddCalendar = () => {
     if (!data?.best) return;
     const start = new Date(data.best.departAtISO);
@@ -262,7 +263,7 @@ export default function ResultClient() {
       "BEGIN:VEVENT",
       `DTSTART:${stamp(start)}`,
       `DTEND:${stamp(end)}`,
-      "SUMMARY:Salida óptima (CongestionAI)",
+      "SUMMARY:Optimal departure (CongestionAI)",
       "END:VEVENT",
       "END:VCALENDAR",
     ].join("\n");
@@ -275,12 +276,12 @@ export default function ResultClient() {
 
   const handleShare = () => {
     if (!data?.best) return;
-    const tStr = new Date(data.best.departAtISO).toLocaleTimeString([], {
-      hour: "2-digit",
-      minute: "2-digit",
-    });
+    const tStr = new Date(data.best.departAtISO).toLocaleTimeString(
+      settings?.locale || undefined,
+      { hour: "2-digit", minute: "2-digit" },
+    );
     const pct = Math.round((data.best.savingVsNow || 0) * 100);
-    const msg = `Salgo ${tStr}. ETA ~${data.best.etaMin} min (ahorro ${pct}%) – CongestionAI`;
+    const msg = `Leave at ${tStr}. ETA ~${data.best.etaMin} min (saves ${pct}%) – CongestionAI`;
     if (navigator.share)
       navigator
         .share({ text: msg })
@@ -288,7 +289,7 @@ export default function ResultClient() {
     else navigator.clipboard.writeText(msg);
   };
 
-  // ---- Savings model tomando Settings ----
+  // savings model using Settings
   const savings =
     data?.best && settings
       ? estimateSavings({
@@ -300,7 +301,7 @@ export default function ResultClient() {
         })
       : undefined;
 
-  // ---- initialOptions del Planner respetando Settings si la URL no trae overrides ----
+  // Planner initial options honoring Settings unless URL overrides
   const initialPlannerOptions = useMemo(() => {
     const s = settings;
     return {
@@ -330,6 +331,46 @@ export default function ResultClient() {
     hasAvoidTollsQ,
     hasAvoidHighwaysQ,
   ]);
+
+  // ---- Heatmap props (new API) ----
+  const heatmapChips = useMemo(() => {
+    const a: string[] = [];
+    const iso = data?.best?.departAtISO;
+    if (!iso) return a;
+    const d = new Date(iso);
+    const dow = d.getDay();
+    const h = d.getHours();
+    if (dow === 0 || dow === 6) a.push("Weekend");
+    if (isHolidayISO(iso, country)) a.push("Holiday");
+    if ((h >= 7 && h <= 9) || (h >= 17 && h <= 19)) a.push("Peak hour");
+    return a;
+  }, [data?.best?.departAtISO, country]);
+
+  const heatmapPoints = useMemo(() => {
+    if (!data) return [];
+    const base =
+      data.alternatives && data.alternatives.length > 0
+        ? data.alternatives
+        : data.best
+          ? [
+              {
+                departAtISO: data.best.departAtISO,
+                etaMin: data.best.etaMin,
+                risk: data.best.risk ?? 0,
+              },
+            ]
+          : [];
+    return base.map((s) => ({
+      timeISO: s.departAtISO,
+      etaMin: s.etaMin,
+      risk: typeof s.risk === "number" ? s.risk : 0,
+    }));
+  }, [data]);
+
+  const heatmapNowISO = useMemo(() => {
+    if (!data) return undefined;
+    return data.alternatives?.[0]?.departAtISO ?? data.best?.departAtISO;
+  }, [data]);
 
   return (
     <section className="space-y-6">
@@ -419,8 +460,14 @@ export default function ResultClient() {
           </SectionCard>
 
           <SectionCard>
-            <h3 className="font-semibold mb-3">Heatmap next 2h</h3>
-            <Heatmap data={data.heatmap} />
+            <h3 className="font-semibold mb-3">
+              Departure advisor (next window)
+            </h3>
+            <Heatmap
+              points={heatmapPoints}
+              nowISO={heatmapNowISO}
+              chips={heatmapChips}
+            />
           </SectionCard>
 
           <StickyActions onCalendar={handleAddCalendar} onShare={handleShare} />
