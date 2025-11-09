@@ -1,4 +1,6 @@
+// web/app/forecast/forecast-client.tsx
 "use client";
+
 import { useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { SectionCard } from "@/components/ui/SectionCard";
@@ -51,19 +53,28 @@ export default function ForecastClient() {
     return () => ctrl.abort();
   }, [origin, destination, horizon, step, valid]);
 
-  const hmData = useMemo(() => {
-    if (!data?.samples?.length) return [];
+  // Adaptador → Heatmap {points, nowISO, chips}
+  const { points, nowISO } = useMemo(() => {
+    if (!data?.samples?.length)
+      return {
+        points: [] as { timeISO: string; etaMin: number; risk: number }[],
+        nowISO: undefined as string | undefined,
+      };
+    const t0 = Date.now(); // “ahora” como base para convertir tMin→ISO
     const maxEta = Math.max(...data.samples.map((s) => s.etaMin));
-    return data.samples.map((s) => ({
-      hourOfWeek: Math.round(s.tMin / 60), // eje X
-      risk: s.etaMin / Math.max(1, maxEta), // 0..1 para heatmap
+    const pts = data.samples.map((s) => ({
+      timeISO: new Date(t0 + s.tMin * 60_000).toISOString(),
+      etaMin: s.etaMin,
+      // riesgo relativo: mayor ETA == mayor “congestión”
+      risk: s.etaMin / Math.max(1, maxEta),
     }));
+    return { points: pts, nowISO: pts[0]?.timeISO };
   }, [data]);
 
   return (
     <section className="space-y-6">
       <SectionCard staticCard>
-        <h3 className="font-semibold mb-3">Heatmap 72 h</h3>
+        <h3 className="font-semibold mb-3">72h Forecast</h3>
         {loading && (
           <div className="h-28 rounded-2xl bg-slate-100 animate-pulse" />
         )}
@@ -72,12 +83,14 @@ export default function ForecastClient() {
             {err}
           </div>
         )}
-        {!loading && data && <Heatmap data={hmData} />}
+        {!loading && data && (
+          <Heatmap points={points} nowISO={nowISO} chips={["72h forecast"]} />
+        )}
       </SectionCard>
 
       {data && (
         <SectionCard>
-          <h3 className="font-semibold mb-3">Top 3 ventanas</h3>
+          <h3 className="font-semibold mb-3">Top 3 windows</h3>
           <ul className="grid gap-2">
             {data.bestWindows.map((w, i) => {
               const t = new Date(w.startISO).toLocaleString([], {
@@ -107,15 +120,17 @@ export default function ForecastClient() {
                       router.push(`/result?${q.toString()}`);
                     }}
                   >
-                    Planear esa ventana
+                    Plan this window
                   </button>
                 </li>
               );
             })}
           </ul>
-          <p className="mt-2 text-xs text-slate-500">
-            {data.notes?.join(" · ")}
-          </p>
+          {data.notes?.length ? (
+            <p className="mt-2 text-xs text-slate-500">
+              {data.notes.join(" · ")}
+            </p>
+          ) : null}
         </SectionCard>
       )}
     </section>
