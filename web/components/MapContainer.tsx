@@ -13,14 +13,48 @@ export type SpeedReadingInterval = {
 
 type Props = {
   provider: Provider;
-  origin: string; // público (no usado para dibujar)
-  destination: string; // público (no usado para dibujar)
+  origin: string; // público (no se usa para dibujar)
+  destination: string; // público (no se usa para dibujar)
   polylineEnc?: string;
   sri?: SpeedReadingInterval[];
 };
 
-function decodePolyline(encoded: string): Array<{ lat: number; lng: number }> {
-  const coords: Array<{ lat: number; lng: number }> = [];
+/* ===== Tipos mínimos para Google Maps (evitar any) ===== */
+type GLatLng = { lat: number; lng: number };
+
+type GMapOptions = {
+  center: GLatLng;
+  zoom?: number;
+  disableDefaultUI?: boolean;
+};
+
+type GLatLngBounds = {
+  extend: (pt: GLatLng) => void;
+  isEmpty?: () => boolean;
+};
+
+type GMap = {
+  fitBounds: (b: GLatLngBounds, padding?: number) => void;
+};
+
+type GPolylineOptions = {
+  path: GLatLng[];
+  strokeColor?: string;
+  strokeOpacity?: number;
+  strokeWeight?: number;
+  map?: GMap;
+};
+
+type GPolyline = { setMap: (m: GMap | null) => void };
+
+type MapConstructor = new (el: HTMLElement, opts?: GMapOptions) => GMap;
+type PolylineConstructor = new (opts: GPolylineOptions) => GPolyline;
+type BoundsConstructor = new () => GLatLngBounds;
+
+/* ======================================================= */
+
+function decodePolyline(encoded: string): GLatLng[] {
+  const coords: GLatLng[] = [];
   let index = 0,
     lat = 0,
     lng = 0;
@@ -73,21 +107,27 @@ export function MapContainer({ provider, polylineEnc, sri }: Props) {
 
     (async () => {
       if (provider === "google") {
-        // Garantiza el script; usa los tipos globales de @types/google.maps
-        await ensureGoogleMaps(["core", "maps"]);
-        const gmaps = (globalThis as { google?: typeof google }).google?.maps;
-        if (!gmaps) {
-          console.error("[Map] Google Maps no disponible");
+        const libs = await ensureGoogleMaps(["core", "maps"]);
+        const MapCtor = libs.maps?.Map as unknown as MapConstructor | undefined;
+        const PolylineCtor = libs.maps?.Polyline as unknown as
+          | PolylineConstructor
+          | undefined;
+        const BoundsCtor = libs.core?.LatLngBounds as unknown as
+          | BoundsConstructor
+          | undefined;
+
+        if (!MapCtor || !PolylineCtor || !BoundsCtor) {
+          console.error("[Map] Google Maps libs not available");
           return;
         }
 
-        const map = new gmaps.Map(el, {
+        const map = new MapCtor(el, {
           center,
           zoom: hasPath ? 12 : 11,
           disableDefaultUI: true,
         });
 
-        const lines: google.maps.Polyline[] = [];
+        const lines: GPolyline[] = [];
 
         if (hasPath) {
           if (sri?.length) {
@@ -96,7 +136,7 @@ export function MapContainer({ provider, polylineEnc, sri }: Props) {
               const end = Math.min(path.length - 1, seg.endPolylinePointIndex);
               if (end <= start) return;
               const segPath = path.slice(start, end + 1);
-              const line = new gmaps.Polyline({
+              const line = new PolylineCtor({
                 path: segPath,
                 strokeColor: SPEED_COLOR[seg.speed] ?? "#2563eb",
                 strokeOpacity: 0.9,
@@ -106,7 +146,7 @@ export function MapContainer({ provider, polylineEnc, sri }: Props) {
               lines.push(line);
             });
           } else {
-            const line = new gmaps.Polyline({
+            const line = new PolylineCtor({
               path,
               strokeColor: "#2563eb",
               strokeOpacity: 0.9,
@@ -117,11 +157,11 @@ export function MapContainer({ provider, polylineEnc, sri }: Props) {
           }
 
           try {
-            const bounds = new gmaps.LatLngBounds();
+            const bounds = new BoundsCtor();
             path.forEach((p) => bounds.extend(p));
-            map.fitBounds(bounds, 40); // padding numérico, sin any
+            map.fitBounds(bounds, 40); // padding numérico
           } catch {
-            /* padding no soportado en algunas integraciones: ok */
+            /* noop */
           }
         }
 
@@ -134,7 +174,7 @@ export function MapContainer({ provider, polylineEnc, sri }: Props) {
         if (!token) return;
 
         await loadMapKit(token);
-        const mk = (globalThis as unknown as { mapkit: typeof mapkit }).mapkit;
+        const mk = (window as unknown as { mapkit: typeof mapkit }).mapkit;
 
         const map = new mk.Map(el);
         map.showsZoomControl = false;

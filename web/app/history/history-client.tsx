@@ -183,9 +183,11 @@ export default function HistoryClient() {
       ) : (
         <SectionCard>
           <ul className="divide-y">
-            {filtered.map((it) => (
+            {filtered.map((it, idx) => (
               <HistoryItemCard
-                key={it.id}
+                key={
+                  it.id ?? `${it.origin}-${it.destination}-${it.savedAt}-${idx}`
+                }
                 item={it}
                 onOpenResult={openResult}
                 onReplan={replan}

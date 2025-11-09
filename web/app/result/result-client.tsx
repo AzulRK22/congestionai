@@ -15,6 +15,7 @@ import type {
   WaypointInput,
   SpeedReadingInterval,
 } from "@/types/analyze";
+import type { ForecastResponse } from "@/types/forecast";
 import { estimateSavings } from "@/lib/sustainability";
 import { loadSettings, type AppSettings } from "@/lib/settings";
 
@@ -332,8 +333,8 @@ export default function ResultClient() {
     hasAvoidHighwaysQ,
   ]);
 
-  // ---- Heatmap props (new API) ----
-  const heatmapChips = useMemo(() => {
+  // ---- Heatmap props (Result main window) ----
+  const resultChips = useMemo(() => {
     const a: string[] = [];
     const iso = data?.best?.departAtISO;
     if (!iso) return a;
@@ -346,7 +347,7 @@ export default function ResultClient() {
     return a;
   }, [data?.best?.departAtISO, country]);
 
-  const heatmapPoints = useMemo(() => {
+  const resultPoints = useMemo(() => {
     if (!data) return [];
     const base =
       data.alternatives && data.alternatives.length > 0
@@ -367,10 +368,81 @@ export default function ResultClient() {
     }));
   }, [data]);
 
-  const heatmapNowISO = useMemo(() => {
+  const resultNowISO = useMemo(() => {
     if (!data) return undefined;
     return data.alternatives?.[0]?.departAtISO ?? data.best?.departAtISO;
   }, [data]);
+
+  // ================= 72h Forecast (Beta) =================
+  const [fc, setFc] = useState<ForecastResponse | null>(null);
+  const [fcLoading, setFcLoading] = useState(false);
+  const [fcErr, setFcErr] = useState<string | null>(null);
+  const FC_H = 72;
+  const FC_STEP = 60;
+
+  useEffect(() => {
+    if (!valid) {
+      setFc(null);
+      setFcErr(null);
+      return;
+    }
+    const ctrl = new AbortController();
+    (async () => {
+      try {
+        setFcLoading(true);
+        setFcErr(null);
+        const res = await fetch("/api/forecast", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          signal: ctrl.signal,
+          body: JSON.stringify({
+            origin: originPayload,
+            destination: destinationPayload,
+            horizonHours: FC_H,
+            stepMins: FC_STEP,
+            avoidTolls: avoidTollsQ,
+            avoidHighways: avoidHighwaysQ,
+            country,
+          }),
+        });
+        if (!res.ok) {
+          if (res.status === 502) {
+            setFcErr(
+              "502 — upstream hiccup. Try again or reduce horizon/step.",
+            );
+            setFc(null);
+            return;
+          }
+          throw new Error(`HTTP ${res.status}`);
+        }
+        const json = (await res.json()) as ForecastResponse;
+        setFc(json);
+      } catch (e) {
+        if ((e as Error).name === "AbortError") return;
+        setFcErr((e as Error).message || "Error");
+      } finally {
+        setFcLoading(false);
+      }
+    })();
+    return () => ctrl.abort();
+  }, [
+    valid,
+    originPayload,
+    destinationPayload,
+    avoidTollsQ,
+    avoidHighwaysQ,
+    country,
+  ]);
+
+  const forecastPoints = useMemo(
+    () =>
+      fc?.samples?.map((s) => ({
+        timeISO: s.departAtISO,
+        etaMin: s.etaMin,
+        risk: s.risk,
+      })) ?? [],
+    [fc],
+  );
 
   return (
     <section className="space-y-6">
@@ -464,10 +536,89 @@ export default function ResultClient() {
               Departure advisor (next window)
             </h3>
             <Heatmap
-              points={heatmapPoints}
-              nowISO={heatmapNowISO}
-              chips={heatmapChips}
+              points={resultPoints}
+              nowISO={resultNowISO}
+              chips={resultChips}
             />
+          </SectionCard>
+
+          {/* ====== 72h Forecast (Beta) ====== */}
+          <SectionCard>
+            <div className="flex items-center justify-between mb-2">
+              <h3 className="font-semibold">
+                72h Forecast{" "}
+                <span className="align-middle ml-2 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-medium text-amber-700">
+                  Beta
+                </span>
+              </h3>
+              <div className="text-xs text-slate-500">
+                horizon {FC_H}h · step {FC_STEP}m
+              </div>
+            </div>
+
+            {fcLoading && (
+              <div className="h-28 rounded-2xl bg-slate-100 animate-pulse" />
+            )}
+
+            {fcErr && (
+              <div className="rounded-md border border-amber-200 bg-amber-50 text-amber-800 p-3 text-sm">
+                {fcErr}
+              </div>
+            )}
+
+            {!fcLoading && !fcErr && fc && (
+              <>
+                <Heatmap points={forecastPoints} />
+                <div className="mt-3">
+                  <h4 className="text-sm font-medium mb-2">Top 3 windows</h4>
+                  <ul className="grid gap-2">
+                    {fc.bestWindows.slice(0, 3).map((w) => {
+                      const t = new Date(w.startISO).toLocaleString(
+                        settings?.locale || undefined,
+                        {
+                          weekday: "short",
+                          hour: "2-digit",
+                          minute: "2-digit",
+                        },
+                      );
+                      return (
+                        <li
+                          key={w.startISO}
+                          className="flex items-center justify-between rounded-lg border p-2"
+                        >
+                          <div>
+                            <div className="font-medium">{t}</div>
+                            <div className="text-xs text-slate-600">
+                              ETA ~{w.etaMin} min
+                            </div>
+                          </div>
+                          <button
+                            className="btn btn-outline"
+                            onClick={() => {
+                              const q = new URLSearchParams({
+                                origin: originQ ?? "",
+                                destination: destinationQ ?? "",
+                                offset: String(Math.max(1, w.tMin)),
+                                window: "120",
+                                step: "10",
+                              });
+                              router.replace(`/result?${q.toString()}`);
+                            }}
+                          >
+                            Plan this
+                          </button>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                  {fc.notes?.length ? (
+                    <p className="mt-2 text-[11px] text-slate-500">
+                      {fc.notes.join(" · ")}
+                    </p>
+                  ) : null}
+                </div>
+              </>
+            )}
           </SectionCard>
 
           <StickyActions onCalendar={handleAddCalendar} onShare={handleShare} />

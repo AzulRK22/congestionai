@@ -72,6 +72,7 @@ Create .env:
 - `pnpm build` — compila producción
 - `pnpm start` — arranca servidor
 
+
 ## Configuration
 All defaults live in Settings (persisted in localStorage):
 	•	Country → Holiday-aware risk (🇲🇽 mx, 🇺🇸 us, 🇩🇪 de).
@@ -90,4 +91,16 @@ All defaults live in Settings (persisted in localStorage):
 	•	Holiday lists are demo-size; expand per country for production.
 	•	No server DB; history/settings live in the browser.
 
+## 🧪 Demo script (for judges)
+	1. Open Plan → CDMX → Puebla → Window 120 / Step 10 → Plan.
+	2. In Result: show Best, the Advisor, chips Holiday/Weekend, Save, Add to calendar.
+	3. Open History: view metrics and the saved item; use Replan.
+	4. Show Settings: change Country to us and explain how it impacts risk/holiday and cache.
+	5. Go to Forecast: show 72h and “Plan that window”.
+
+## 🤝 Contributing
+  PRs welcome. Standards: Strict TypeScript, ESLint, Tailwind.
+
+## License
+    MIT
 ````
