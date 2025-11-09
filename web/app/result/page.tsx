@@ -1,4 +1,3 @@
-// app/result/page.tsx
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
@@ -11,31 +10,53 @@ import { MapContainer } from "@/components/MapContainer";
 import { StickyActions } from "@/components/StickyActions";
 import { saveHistoryItem } from "@/lib/storage";
 
+function parseWaypointParam(s: string | null): any {
+  if (!s) return "";
+  const t = s.trim().replace(/^geo:/, "");
+  const clean = t.startsWith("@") ? t.slice(1) : t;
+  const re = /^-?\d+(\.\d+)?,\s*-?\d+(\.\d+)?$/;
+  if (re.test(clean)) {
+    const [latStr, lngStr] = clean.split(",");
+    const lat = parseFloat(latStr);
+    const lng = parseFloat(lngStr);
+    if (!Number.isNaN(lat) && !Number.isNaN(lng)) return { lat, lng };
+  }
+  return t; // dirección/lugar
+}
+
 export default function ResultPage() {
   const sp = useSearchParams();
   const router = useRouter();
 
-  const origin = sp.get("origin") ?? "";
-  const destination = sp.get("destination") ?? "";
+  const originQ = sp.get("origin");
+  const destinationQ = sp.get("destination");
+
+  const originPayload = useMemo(() => parseWaypointParam(originQ), [originQ]);
+  const destinationPayload = useMemo(
+    () => parseWaypointParam(destinationQ),
+    [destinationQ],
+  );
 
   const [provider, setProvider] = useState<"google" | "apple">("google");
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
-  // Lee provider guardado en Settings
   useEffect(() => {
     const p =
       (localStorage.getItem("provider") as "google" | "apple") || "google";
     setProvider(p);
   }, []);
 
+  const isOk = (v: any) =>
+    typeof v === "string"
+      ? v.trim().length > 2
+      : v && typeof v.lat === "number" && typeof v.lng === "number";
   const valid = useMemo(
-    () => origin.trim().length > 2 && destination.trim().length > 2,
-    [origin, destination],
+    () => isOk(originPayload) && isOk(destinationPayload),
+    [originPayload, destinationPayload],
   );
 
-  // Llama a /api/analyze para mejores horarios + heatmap
   useEffect(() => {
     if (!valid) return;
     (async () => {
@@ -45,9 +66,17 @@ export default function ResultPage() {
         const res = await fetch("/api/analyze", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ origin, destination, window: "next120" }), // 120m = demo ágil
+          body: JSON.stringify({
+            origin: originPayload, // ← puede ser string o {lat,lng}
+            destination: destinationPayload,
+            windowMins: 120,
+            stepMins: 10,
+          }),
         });
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        if (!res.ok) {
+          const j = await res.json().catch(() => ({}));
+          throw new Error(j?.detail?.text || `HTTP ${res.status}`);
+        }
         const json = await res.json();
         setData(json);
       } catch (e: any) {
@@ -56,9 +85,9 @@ export default function ResultPage() {
         setLoading(false);
       }
     })();
-  }, [origin, destination, valid]);
+  }, [originPayload, destinationPayload, valid]);
 
-  // Helpers para acciones 1-clic
+  // Helpers acciones 1-clic
   const handleAddCalendar = () => {
     if (!data?.best) return;
     const start = new Date(data.best.departAtISO);
@@ -100,11 +129,10 @@ export default function ResultPage() {
     <section className="py-6 space-y-6">
       <h1 className="text-3xl font-semibold tracking-tight">Resultado</h1>
 
-      {/* Form para replanear rápido */}
       <SectionCard>
         <PlannerForm
-          initialOrigin={origin}
-          initialDestination={destination}
+          initialOrigin={originQ ?? ""}
+          initialDestination={destinationQ ?? ""}
           onSubmit={(o, d) =>
             router.replace(
               `/result?origin=${encodeURIComponent(o)}&destination=${encodeURIComponent(d)}`,
@@ -113,15 +141,15 @@ export default function ResultPage() {
         />
       </SectionCard>
 
-      {/* Mapa (card estática para evitar IntersectionObserver issues) */}
       <SectionCard staticCard>
         <h3 className="font-semibold mb-3">Mapa</h3>
         {valid ? (
           <MapContainer
             provider={provider}
-            origin={origin}
-            destination={destination}
-            polylineEnc={data?.best?.polyline} // 👈 pásalo cuando exista
+            origin={originQ ?? ""}
+            destination={destinationQ ?? ""}
+            polylineEnc={data?.best?.polyline}
+            sri={data?.best?.sri}
           />
         ) : (
           <div className="h-72 rounded-2xl border bg-slate-50 grid place-items-center text-sm text-slate-500">
@@ -130,7 +158,6 @@ export default function ResultPage() {
         )}
       </SectionCard>
 
-      {/* Estados de carga/errores */}
       {loading && (
         <div className="h-28 rounded-2xl bg-slate-100 animate-pulse" />
       )}
@@ -140,7 +167,6 @@ export default function ResultPage() {
         </div>
       )}
 
-      {/* Datos listos: tarjeta + heatmap + acciones sticky */}
       {data && !loading && !err && (
         <>
           <SectionCard>
@@ -148,8 +174,8 @@ export default function ResultPage() {
               result={data}
               onSave={() => {
                 saveHistoryItem({
-                  origin,
-                  destination,
+                  origin: originQ ?? "",
+                  destination: destinationQ ?? "",
                   bestISO: data.best?.departAtISO,
                   eta: data.best?.etaMin || 0,
                   savedAt: Date.now(),

@@ -1,118 +1,291 @@
 "use client";
-import { useEffect, useRef, useState } from "react";
-import { MapPin, X, Crosshair } from "lucide-react";
-import { usePlacesAutocomplete } from "./usePlacesAutocomplete";
-import { TextField } from "@/components/ui/TextField";
+
+import React, {
+  useEffect,
+  useRef,
+  useState,
+  forwardRef,
+  useImperativeHandle,
+} from "react";
+import { MapPin, LocateFixed, X } from "lucide-react";
+import { usePlacesAutocomplete } from "@/lib/hooks/usePlacesAutocomplete"; // 👈 corrige path
+
+const coordRe = /^@?-?\d+(\.\d+)?,\s*-?\d+(\.\d+)?$/;
 
 type Props = {
+  placeholder?: string;
   value: string;
   onChange: (v: string) => void;
-  placeholder: string;
   allowMyLocation?: boolean;
+  name?: string;
+  id?: string;
+
+  selfId: string; // "origin" | "dest"
+  activeId?: string | null;
+  setActiveId?: (id: string | null) => void;
+
+  countryHint?: string[];
+  onPicked?: () => void;
 };
 
-export function AutocompleteInput({
-  value,
-  onChange,
-  placeholder,
-  allowMyLocation,
-}: Props) {
-  const { ready, preds, query, select, clear } = usePlacesAutocomplete();
-  const [open, setOpen] = useState(false);
-  const timer = useRef<any>(null);
-  const wrapRef = useRef<HTMLDivElement>(null);
+export type AutocompleteInputRef = HTMLInputElement; // 👈 no-null
 
-  // Debounce para no saturar
-  useEffect(() => {
-    clearTimeout(timer.current);
-    timer.current = setTimeout(() => {
-      query(value);
-      setOpen(true);
-    }, 150);
-    return () => clearTimeout(timer.current);
-  }, [value]);
+export const AutocompleteInput = forwardRef<HTMLInputElement, Props>(
+  (
+    {
+      placeholder,
+      value,
+      onChange,
+      allowMyLocation = false,
+      name,
+      id,
+      selfId,
+      activeId,
+      setActiveId,
+      countryHint = ["mx"],
+      onPicked,
+    },
+    ref,
+  ) => {
+    const containerRef = useRef<HTMLDivElement | null>(null);
+    const inputRef = useRef<HTMLInputElement>(null);
+    // 👇 garantiza un HTMLInputElement (TS no-null)
+    useImperativeHandle(ref, () => inputRef.current as HTMLInputElement);
 
-  // Cierra al click afuera
-  useEffect(() => {
-    function onDoc(e: MouseEvent) {
-      if (!wrapRef.current?.contains(e.target as Node)) setOpen(false);
+    const { ready, preds, query, select, clear } =
+      usePlacesAutocomplete(countryHint);
+
+    const [openLocal, setOpenLocal] = useState(false);
+    const [hi, setHi] = useState(-1);
+    const q = value ?? "";
+    const debounced = useDebounce(q, 220);
+
+    const isActive = activeId ? activeId === selfId : true;
+    const open = openLocal && isActive && preds.length > 0;
+
+    const suppressNextRef = useRef(false);
+
+    useEffect(() => {
+      if (!isActive) {
+        setOpenLocal(false);
+        return;
+      }
+      if (suppressNextRef.current) {
+        suppressNextRef.current = false;
+        setOpenLocal(false);
+        clear();
+        return;
+      }
+      const text = q.trim();
+      const isCoord = coordRe.test(text);
+      if (!ready || text.length < 3 || isCoord) {
+        clear();
+        setOpenLocal(false);
+        return;
+      }
+      query(debounced);
+      setOpenLocal(true);
+      setHi(-1);
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [debounced, q, ready, isActive]); // 👈 evitamos meter clear/query para no re-render loop
+
+    usePointerDownOutside(containerRef, () => {
+      if (openLocal) setOpenLocal(false);
+      if (activeId === selfId) setActiveId?.(null);
+    });
+
+    function handleChange(e: React.ChangeEvent<HTMLInputElement>) {
+      const v = e.target.value;
+      if (coordRe.test(v) && !v.trim().startsWith("@"))
+        onChange(`@${v.trim()}`);
+      else onChange(v);
+      if (v.trim().length < 3) {
+        setOpenLocal(false);
+        setActiveId?.(null);
+      }
     }
-    document.addEventListener("mousedown", onDoc);
-    return () => document.removeEventListener("mousedown", onDoc);
-  }, []);
 
-  async function useMyLocation() {
-    if (!allowMyLocation || !navigator.geolocation) return;
-    navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        const v = `${pos.coords.latitude.toFixed(5)},${pos.coords.longitude.toFixed(5)}`;
-        onChange(v);
-        setOpen(false);
-      },
-      () => {
-        /* ignora errores de permiso */
-      },
-    );
-  }
+    function handleSelect(text: string) {
+      suppressNextRef.current = true;
+      onChange(text);
+      select(); // reset token + limpia preds
+      setOpenLocal(false);
+      setActiveId?.(null);
+      setHi(-1);
+      inputRef.current?.blur();
+      onPicked?.();
+    }
 
-  return (
-    <div className="relative" ref={wrapRef}>
-      <MapPin
-        size={16}
-        className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
-      />
-      <TextField
-        autoComplete="off"
-        placeholder={placeholder}
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        className="pl-8"
-        onFocus={() => value.length >= 3 && setOpen(true)}
-      />
-      {value && (
-        <button
-          type="button"
-          aria-label="Limpiar"
-          onClick={() => {
-            onChange("");
-            clear();
-            setOpen(false);
-          }}
-          className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-slate-400 hover:text-slate-600"
-        >
-          <X size={16} />
-        </button>
-      )}
+    function onKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
+      if (!open || !preds.length) return;
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        setHi((i) => (i + 1) % preds.length);
+      } else if (e.key === "ArrowUp") {
+        e.preventDefault();
+        setHi((i) => (i <= 0 ? preds.length - 1 : i - 1));
+      } else if (e.key === "Enter") {
+        if (hi >= 0) {
+          e.preventDefault();
+          handleSelect(preds[hi].description);
+        }
+      } else if (e.key === "Escape") {
+        setOpenLocal(false);
+        setActiveId?.(null);
+        setHi(-1);
+      }
+    }
 
-      {/* Dropdown */}
-      {open && (ready ? preds.length > 0 : false) && (
-        <div className="autocomplete-menu">
-          {preds.map((p) => (
-            <div
-              key={p.place_id}
-              className="autocomplete-item"
-              onMouseDown={(e) => e.preventDefault()}
-              onClick={() => {
-                onChange(select(p.description));
-                setOpen(false);
-              }}
-            >
-              {p.description}
-            </div>
-          ))}
+    function setMyLocation() {
+      if (!navigator.geolocation) {
+        alert("Activa permisos de ubicación");
+        return;
+      }
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          onChange(
+            `@${pos.coords.latitude.toFixed(6)},${pos.coords.longitude.toFixed(6)}`,
+          );
+          clear();
+          setOpenLocal(false);
+          setActiveId?.(null);
+          onPicked?.();
+        },
+        () => alert("No se pudo obtener tu ubicación"),
+        { enableHighAccuracy: true, timeout: 8000, maximumAge: 60000 },
+      );
+    }
+
+    return (
+      <div
+        ref={containerRef}
+        className={`relative ${isActive ? "z-40" : "z-10"}`} // 👈 apilado claro
+        onFocus={() => setActiveId?.(selfId)}
+      >
+        {/* Ícono izquierda */}
+        <div className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2">
+          <MapPin className="h-4 w-4 text-slate-400" />
         </div>
-      )}
 
-      {/* Botón Mi ubicación (opcional) */}
-      {allowMyLocation && (
-        <button
-          type="button"
-          onClick={useMyLocation}
-          className="mt-1 inline-flex items-center text-xs text-slate-600 hover:text-slate-900"
-        >
-          <Crosshair size={14} className="mr-1" /> Usar mi ubicación
-        </button>
-      )}
-    </div>
-  );
+        <input
+          ref={inputRef}
+          id={id}
+          name={name}
+          value={q}
+          onChange={handleChange}
+          onKeyDown={onKeyDown}
+          placeholder={placeholder}
+          autoComplete="off"
+          enterKeyHint="search"
+          aria-expanded={open}
+          aria-autocomplete="list"
+          onFocus={() => {
+            setActiveId?.(selfId);
+            if (preds.length) setOpenLocal(true);
+          }}
+          className="w-full h-11 rounded-xl border border-slate-200 bg-white pl-10 pr-22 text-sm placeholder:text-slate-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-900/10 focus:border-slate-300"
+        />
+
+        {/* Botonera derecha (mejor icono y centrado) */}
+        <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1">
+          {allowMyLocation && (
+            <button
+              type="button"
+              onClick={setMyLocation}
+              title="Usar mi ubicación"
+              className="h-8 w-8 grid place-items-center rounded-full border border-slate-200 bg-white hover:bg-slate-50 shadow-[0_1px_0_rgba(0,0,0,.03)]"
+            >
+              <LocateFixed className="h-4 w-4 text-slate-700" />
+            </button>
+          )}
+          {!!q && (
+            <button
+              type="button"
+              onClick={() => {
+                onChange("");
+                clear();
+                setOpenLocal(false);
+                setActiveId?.(selfId);
+                inputRef.current?.focus();
+              }}
+              title="Limpiar"
+              className="h-8 w-8 grid place-items-center rounded-full border border-slate-200 bg-white hover:bg-slate-50 shadow-[0_1px_0_rgba(0,0,0,.03)]"
+            >
+              <X className="h-4 w-4 text-slate-700" />
+            </button>
+          )}
+        </div>
+
+        {/* Dropdown */}
+        {open && (
+          <div className="absolute z-50 mt-2 w-full rounded-xl border border-slate-200 bg-white shadow-xl ring-1 ring-black/5 overflow-hidden">
+            <ul className="max-h-72 overflow-auto">
+              {preds.map((p: any, i: number) => (
+                <li
+                  key={p.place_id}
+                  className={
+                    i === preds.length - 1 ? "" : "border-b border-slate-100"
+                  }
+                >
+                  <button
+                    type="button"
+                    // 👇 mouse down se ejecuta antes del blur y evita “click-through”
+                    onMouseDown={(e) => {
+                      e.preventDefault();
+                      handleSelect(p.description);
+                    }}
+                    onMouseEnter={() => setHi(i)}
+                    onMouseLeave={() => setHi(-1)}
+                    className={`flex w-full items-center gap-2 px-3 py-2 text-left text-[0.92rem] ${
+                      hi === i ? "bg-slate-100" : "bg-white"
+                    }`}
+                  >
+                    <span className="h-5 w-5 shrink-0 grid place-items-center rounded-full border border-slate-300 bg-slate-50">
+                      <MapPin className="h-3 w-3 text-slate-500" />
+                    </span>
+                    <span className="truncate">
+                      <b>
+                        {p.structured_formatting?.main_text ?? p.description}
+                      </b>{" "}
+                      <span className="text-slate-500">
+                        {p.structured_formatting?.secondary_text
+                          ? `— ${p.structured_formatting.secondary_text}`
+                          : ""}
+                      </span>
+                    </span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+      </div>
+    );
+  },
+);
+AutocompleteInput.displayName = "AutocompleteInput";
+
+/* utils */
+function useDebounce<T>(value: T, delay = 220) {
+  const [v, setV] = useState(value);
+  useEffect(() => {
+    const id = setTimeout(() => setV(value), delay);
+    return () => clearTimeout(id);
+  }, [value, delay]);
+  return v;
+}
+function usePointerDownOutside(
+  ref: React.RefObject<HTMLElement>,
+  onOutside: () => void,
+) {
+  useEffect(() => {
+    function handler(e: PointerEvent) {
+      const el = ref.current;
+      if (!el) return;
+      if (e.target instanceof Node && el.contains(e.target)) return;
+      onOutside();
+    }
+    document.addEventListener("pointerdown", handler, { passive: true });
+    return () => document.removeEventListener("pointerdown", handler as any);
+  }, [ref, onOutside]);
 }
