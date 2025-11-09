@@ -12,27 +12,22 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # Instala pnpm (binario)
+      # Usa la versión de pnpm que declara package.json: "packageManager": "pnpm@9.7.0"
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
         with:
-          version: 9
           run_install: false
 
-      # Node desde .nvmrc y cache del store de pnpm
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
           node-version-file: ".nvmrc"
           cache: "pnpm"
+          cache-dependency-path: "pnpm-lock.yaml" # asegura buen cache
 
-      # (opcional, como fallback si algo raro pasa con pnpm)
-      - name: Enable Corepack
-        run: corepack enable
-
-      # Instala deps del workspace (un solo lockfile en la raíz)
-      - name: Install
-        run: pnpm install --frozen-lockfile=false
+      # (opcional) desactiva husky en CI
+      - name: Install deps
+        run: HUSKY=0 pnpm install --frozen-lockfile=false
 
       - name: Lint
         run: pnpm -C web lint
