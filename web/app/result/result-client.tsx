@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useRef } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { SectionCard } from "@/components/ui/SectionCard";
 import { PlannerForm } from "@/components/PlannerForm";
@@ -14,19 +14,10 @@ import type {
   WaypointInput,
   SpeedReadingInterval,
 } from "@/types/analyze";
+import { estimateSavings } from "@/lib/sustainability";
+import { loadSettings, type AppSettings } from "@/lib/settings";
 
-/** ---------- Helpers de tipos (sin any) ---------- */
-function isRecord(x: unknown): x is Record<string, unknown> {
-  return typeof x === "object" && x !== null;
-}
-function isNumber(n: unknown): n is number {
-  return typeof n === "number" && Number.isFinite(n);
-}
-function isNonEmptyString(s: unknown): s is string {
-  return typeof s === "string" && s.trim().length > 0;
-}
-
-/** Convierte query (?origin=..., ?destination=...) a WaypointInput o "" */
+// --- helpers ---
 function parseWaypointParam(s: string | null): WaypointInput | "" {
   if (!s) return "";
   const t = s.trim().replace(/^geo:/, "");
@@ -36,34 +27,105 @@ function parseWaypointParam(s: string | null): WaypointInput | "" {
     const [latStr, lngStr] = clean.split(",");
     const lat = Number(latStr);
     const lng = Number(lngStr);
-    if (isNumber(lat) && isNumber(lng)) return { lat, lng };
+    if (Number.isFinite(lat) && Number.isFinite(lng)) return { lat, lng };
   }
-  return t; // dirección/lugar
+  return t;
 }
 
-/** Type guard para validar WaypointInput */
 function isWaypoint(v: WaypointInput | ""): v is WaypointInput {
   if (typeof v === "string") return v.trim().length > 2;
-
-  if (isRecord(v)) {
-    // proyectamos a un shape flexible para poder leer propiedades
+  if (v && typeof v === "object") {
     const o = v as { lat?: unknown; lng?: unknown; placeId?: unknown };
-
-    const hasCoords = isNumber(o.lat) && isNumber(o.lng);
-    const hasPlaceId = isNonEmptyString(o.placeId);
-
-    return hasCoords || hasPlaceId;
+    if (typeof o.lat === "number" && typeof o.lng === "number") return true;
+    if (typeof o.placeId === "string" && o.placeId.length > 0) return true;
   }
   return false;
 }
 
-/** ---------- Componente principal (cliente) ---------- */
+type Provider = "google" | "apple";
+type CacheEntry = { at: number; data: AnalyzeResponse };
+const CACHE_KEY = "an_cache_v1";
+const CACHE_TTL_MS = 3 * 60_000; // 3 min
+
+function cacheGet(key: string): AnalyzeResponse | null {
+  try {
+    const raw = sessionStorage.getItem(CACHE_KEY);
+    if (!raw) return null;
+    const obj = JSON.parse(raw) as Record<string, CacheEntry>;
+    const hit = obj[key];
+    if (!hit) return null;
+    if (Date.now() - hit.at > CACHE_TTL_MS) return null;
+    return hit.data;
+  } catch {
+    return null;
+  }
+}
+function cacheSet(key: string, data: AnalyzeResponse) {
+  try {
+    const raw = sessionStorage.getItem(CACHE_KEY);
+    const obj = raw ? (JSON.parse(raw) as Record<string, CacheEntry>) : {};
+    obj[key] = { at: Date.now(), data };
+    sessionStorage.setItem(CACHE_KEY, JSON.stringify(obj));
+  } catch {}
+}
+function cacheClear() {
+  try {
+    sessionStorage.removeItem(CACHE_KEY);
+  } catch {}
+}
+
 export default function ResultClient() {
   const sp = useSearchParams();
   const router = useRouter();
 
+  // -------- URL params --------
   const originQ = sp.get("origin");
   const destinationQ = sp.get("destination");
+
+  const hasWindowQ = sp.has("window");
+  const hasStepQ = sp.has("step");
+  const hasRefineQ = sp.has("refine");
+  const hasAvoidTollsQ = sp.has("avoidTolls");
+  const hasAvoidHighwaysQ = sp.has("avoidHighways");
+
+  const windowQ = Number(sp.get("window") ?? 120);
+  const stepQ = Number(sp.get("step") ?? 10);
+  const offsetQ = Number(sp.get("offset") ?? 0);
+  const refineQ = sp.get("refine") === "1";
+  const avoidTollsQ = sp.get("avoidTolls") === "1";
+  const avoidHighwaysQ = sp.get("avoidHighways") === "1";
+
+  // -------- Settings (client-only) --------
+  const [settings, setSettings] = useState<AppSettings | null>(null);
+  const prevCountryRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    const s = loadSettings();
+    setSettings(s);
+    prevCountryRef.current = s.country;
+  }, []);
+
+  // si cambian settings en otra pestaña, nos actualizamos y limpiamos la cache
+  useEffect(() => {
+    const onStorage = (e: StorageEvent) => {
+      if (e.key === "app_settings_v1") {
+        const s = loadSettings();
+        const prev = prevCountryRef.current;
+        setSettings(s);
+        if (prev && prev !== s.country) {
+          cacheClear(); // invalida resultados de otro país
+        }
+        prevCountryRef.current = s.country;
+      }
+    };
+    window.addEventListener("storage", onStorage);
+    return () => window.removeEventListener("storage", onStorage);
+  }, []);
+
+  const country = useMemo(
+    () => (settings?.country ?? "mx") as "mx" | "us" | "de",
+    [settings?.country],
+  );
 
   const originPayload = useMemo<WaypointInput | "">(
     () => parseWaypointParam(originQ),
@@ -74,15 +136,15 @@ export default function ResultClient() {
     [destinationQ],
   );
 
-  const [provider, setProvider] = useState<"google" | "apple">("google");
+  const [provider, setProvider] = useState<Provider>("google");
   const [data, setData] = useState<AnalyzeResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
-  // Provider desde Settings (localStorage)
+  // provider desde settings/localStorage
   useEffect(() => {
-    const p = localStorage.getItem("provider");
-    if (p === "google" || p === "apple") setProvider(p);
+    const p = (localStorage.getItem("provider") as Provider) || "google";
+    setProvider(p);
   }, []);
 
   const valid = useMemo(
@@ -90,53 +152,102 @@ export default function ResultClient() {
     [originPayload, destinationPayload],
   );
 
-  // Llama a /api/analyze con cancelación si cambian los params
+  // fetch + cache + protección de timestamp (offset mínimo 1 min)
   useEffect(() => {
     if (!valid) {
       setData(null);
       setErr(null);
       return;
     }
+    const key = JSON.stringify({
+      o: originPayload,
+      d: destinationPayload,
+      w: windowQ,
+      s: stepQ,
+      r: refineQ,
+      ot: avoidTollsQ,
+      oh: avoidHighwaysQ,
+      off: Math.max(offsetQ, 1),
+      ctry: country, // ← país en la clave de caché
+    });
+
+    const cached = cacheGet(key);
+    if (cached) {
+      setData(cached);
+      setErr(null);
+      return;
+    }
+
     const ctrl = new AbortController();
     (async () => {
       try {
-        setErr(null);
         setLoading(true);
+        setErr(null);
+
+        const body = {
+          origin: originPayload,
+          destination: destinationPayload,
+          windowMins: Number.isFinite(windowQ) ? windowQ : 120,
+          stepMins: Number.isFinite(stepQ) ? stepQ : 10,
+          offset: Math.max(offsetQ, 1),
+          refine: refineQ,
+          avoidTolls: avoidTollsQ,
+          avoidHighways: avoidHighwaysQ,
+          country, // ← se manda al backend
+        };
+
         const res = await fetch("/api/analyze", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           signal: ctrl.signal,
-          body: JSON.stringify({
-            origin: originPayload, // string | {lat,lng} | {placeId}
-            destination: destinationPayload,
-            windowMins: 120,
-            stepMins: 10,
-          }),
+          body: JSON.stringify(body),
         });
+
         if (!res.ok) {
-          let msg = `HTTP ${res.status}`;
-          try {
-            const j = (await res.json()) as {
-              error?: string;
-              detail?: unknown;
-            };
-            if (typeof j?.error === "string") msg = j.error;
-          } catch {
-            /* noop */
+          const txt = await res.text().catch(() => "");
+          if (txt.includes("Timestamp must be set to a future time")) {
+            const res2 = await fetch("/api/analyze", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              signal: ctrl.signal,
+              body: JSON.stringify({
+                ...body,
+                offset: Math.max(offsetQ + 2, 2),
+              }),
+            });
+            if (!res2.ok) throw new Error(`HTTP ${res2.status}`);
+            const json2 = (await res2.json()) as AnalyzeResponse;
+            cacheSet(key, json2);
+            setData(json2);
+            return;
           }
-          throw new Error(msg);
+          throw new Error(`HTTP ${res.status}`);
         }
+
         const json = (await res.json()) as AnalyzeResponse;
+        cacheSet(key, json);
         setData(json);
-      } catch (e: unknown) {
-        if (e instanceof Error) setErr(e.message);
-        else setErr("Error");
+      } catch (e) {
+        if ((e as Error).name === "AbortError") return;
+        setErr((e as Error).message || "Error");
       } finally {
         setLoading(false);
       }
     })();
+
     return () => ctrl.abort();
-  }, [originPayload, destinationPayload, valid]);
+  }, [
+    valid,
+    originPayload,
+    destinationPayload,
+    windowQ,
+    stepQ,
+    refineQ,
+    avoidTollsQ,
+    avoidHighwaysQ,
+    offsetQ,
+    country, // ← depende del país
+  ]);
 
   // Acciones 1-clic
   const handleAddCalendar = () => {
@@ -168,35 +279,81 @@ export default function ResultClient() {
       hour: "2-digit",
       minute: "2-digit",
     });
-    const pct = Math.round(data.best.savingVsNow * 100);
+    const pct = Math.round((data.best.savingVsNow || 0) * 100);
     const msg = `Salgo ${tStr}. ETA ~${data.best.etaMin} min (ahorro ${pct}%) – CongestionAI`;
-    if (navigator.share) {
-      navigator.share({ text: msg }).catch(() => {
-        void navigator.clipboard.writeText(msg);
-      });
-    } else {
-      void navigator.clipboard.writeText(msg);
-    }
+    if (navigator.share)
+      navigator
+        .share({ text: msg })
+        .catch(() => navigator.clipboard.writeText(msg));
+    else navigator.clipboard.writeText(msg);
   };
 
-  return (
-    <section className="py-6 space-y-6">
-      <h1 className="text-3xl font-semibold tracking-tight">Resultado</h1>
+  // ---- Savings model tomando Settings ----
+  const savings =
+    data?.best && settings
+      ? estimateSavings({
+          etaMin: data.best.etaMin,
+          savingVsNow: data.best.savingVsNow ?? 0,
+          fuelPricePerL: settings.fuelPricePerL,
+          carLper100km: settings.carLper100km,
+          tripKm: settings.defaultTripKm,
+        })
+      : undefined;
 
-      {/* Form para replanear rápido */}
+  // ---- initialOptions del Planner respetando Settings si la URL no trae overrides ----
+  const initialPlannerOptions = useMemo(() => {
+    const s = settings;
+    return {
+      departOffsetMin: Math.max(offsetQ, 0),
+      windowMins: hasWindowQ ? windowQ : (s?.windowMinsDefault ?? 120),
+      stepMins: hasStepQ ? stepQ : (s?.stepMinsDefault ?? 10),
+      refine: hasRefineQ ? refineQ : (s?.budgetModeDefault ?? true),
+      avoidTolls: hasAvoidTollsQ
+        ? avoidTollsQ
+        : (s?.avoidTollsDefault ?? false),
+      avoidHighways: hasAvoidHighwaysQ
+        ? avoidHighwaysQ
+        : (s?.avoidHighwaysDefault ?? false),
+      budgetMode: s?.budgetModeDefault ?? true,
+    };
+  }, [
+    settings,
+    offsetQ,
+    windowQ,
+    stepQ,
+    refineQ,
+    avoidTollsQ,
+    avoidHighwaysQ,
+    hasWindowQ,
+    hasStepQ,
+    hasRefineQ,
+    hasAvoidTollsQ,
+    hasAvoidHighwaysQ,
+  ]);
+
+  return (
+    <section className="space-y-6">
       <SectionCard>
         <PlannerForm
           initialOrigin={originQ ?? ""}
           initialDestination={destinationQ ?? ""}
-          onSubmit={(o, d) =>
-            router.replace(
-              `/result?origin=${encodeURIComponent(o)}&destination=${encodeURIComponent(d)}`,
-            )
-          }
+          initialOptions={initialPlannerOptions}
+          onSubmit={(o, d, opts) => {
+            const q = new URLSearchParams({
+              origin: o,
+              destination: d,
+              window: String(opts.windowMins),
+              step: String(opts.stepMins),
+              refine: opts.refine ? "1" : "0",
+              offset: String(Math.max(opts.departOffsetMin, 1)),
+              avoidTolls: opts.avoidTolls ? "1" : "0",
+              avoidHighways: opts.avoidHighways ? "1" : "0",
+            });
+            router.replace(`/result?${q.toString()}`);
+          }}
         />
       </SectionCard>
 
-      {/* Mapa */}
       <SectionCard staticCard>
         <h3 className="font-semibold mb-3">Mapa</h3>
         {valid ? (
@@ -214,22 +371,29 @@ export default function ResultClient() {
         )}
       </SectionCard>
 
-      {/* Estados */}
       {loading && (
         <div className="h-28 rounded-2xl bg-slate-100 animate-pulse" />
       )}
+      <div aria-live="polite" className="sr-only">
+        {loading ? "Calculando ruta…" : "Listo"}
+      </div>
+
       {err && (
         <div className="rounded-md border border-red-200 bg-red-50 text-red-700 p-3 text-sm">
-          {err}
+          {err.includes("HTTP 403") &&
+            "403 – revisa tu server key/billing de Google."}
+          {err.includes("HTTP 429") &&
+            "429 – rate limit. Baja step/ventana o activa budget-mode."}
+          {!err.includes("HTTP") && err}
         </div>
       )}
 
-      {/* Resultado + heatmap + acciones */}
       {data && !loading && !err && (
         <>
           <SectionCard>
             <ResultCard
               result={data}
+              savings={savings}
               onSave={() => {
                 saveHistoryItem({
                   origin: originQ ?? "",
@@ -237,6 +401,17 @@ export default function ResultClient() {
                   bestISO: data.best?.departAtISO,
                   eta: data.best?.etaMin || 0,
                   savedAt: Date.now(),
+                  baselineEta:
+                    data.best?.savingVsNow != null
+                      ? Math.round(
+                          data.best.etaMin /
+                            Math.max(0.05, 1 - (data.best.savingVsNow || 0)),
+                        )
+                      : undefined,
+                  savingPct:
+                    data.best?.savingVsNow != null
+                      ? Math.round((data.best.savingVsNow || 0) * 100)
+                      : undefined,
                 });
                 alert("Guardado en History ✅");
               }}

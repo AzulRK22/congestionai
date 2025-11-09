@@ -1,27 +1,34 @@
+// web/app/home-client.tsx
 "use client";
 
-import { useSearchParams, useRouter } from "next/navigation";
+import { useRouter } from "next/navigation";
 import { SectionCard } from "@/components/ui/SectionCard";
-import { PlannerForm } from "@/components/PlannerForm";
+import { PlannerForm, type PlanOptions } from "@/components/PlannerForm";
 
 export default function HomeClient() {
-  const sp = useSearchParams();
   const router = useRouter();
 
-  const initialOrigin = sp.get("origin") ?? "";
-  const initialDestination = sp.get("destination") ?? "";
+  function handleSubmit(
+    origin: string,
+    destination: string,
+    opts: PlanOptions,
+  ) {
+    const qs = new URLSearchParams({
+      origin,
+      destination,
+      window: String(opts.windowMins),
+      step: String(opts.stepMins),
+      refine: opts.refine ? "1" : "0",
+      offset: String(opts.departOffsetMin),
+      avoidTolls: opts.avoidTolls ? "1" : "0",
+      avoidHighways: opts.avoidHighways ? "1" : "0",
+    });
+    router.push(`/result?${qs.toString()}`);
+  }
 
   return (
     <SectionCard>
-      <PlannerForm
-        initialOrigin={initialOrigin}
-        initialDestination={initialDestination}
-        onSubmit={(o, d) =>
-          router.push(
-            `/result?origin=${encodeURIComponent(o)}&destination=${encodeURIComponent(d)}`,
-          )
-        }
-      />
+      <PlannerForm onSubmit={handleSubmit} />
     </SectionCard>
   );
 }
