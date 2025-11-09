@@ -1,3 +1,21 @@
 {
-  "extends": ["next/core-web-vitals", "prettier"]
+  "root": true,
+  "extends": ["next/core-web-vitals", "prettier"],
+  "ignorePatterns": [
+    "node_modules/",
+    ".next/",
+    "dist/",
+    "next.config.*",
+    "tailwind.config.*",
+    "postcss.config.*"
+  ],
+  "overrides": [
+    {
+      "files": ["next.config.*", "tailwind.config.*", "postcss.config.*"],
+      "parser": "espree"
+    }
+  ],
+  "rules": {
+    "no-console": ["warn", { "allow": ["warn", "error"] }]
+  }
 }
