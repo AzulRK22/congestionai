@@ -10,6 +10,7 @@ import { isHolidayISO } from "@/lib/events/holidays";
 import { MapContainer } from "@/components/MapContainer";
 import { StickyActions } from "@/components/StickyActions";
 import { saveHistoryItem } from "@/lib/storage";
+import GoNowBadge from "@/components/GoNowBadge";
 import type {
   AnalyzeResponse,
   WaypointInput,
@@ -529,6 +530,51 @@ export default function ResultClient() {
                 alert("Saved to History ✅");
               }}
             />
+            {/* --- GO/NOW DECISION (mini badge) --- */}
+            {data?.best && (
+              <div className="mt-2">
+                {(() => {
+                  // Heurística simple:
+                  // - If savingVsNow < 7% y riesgo < 0.6 → OK to go
+                  // - en otro caso → Not yet (sugiere esperar hasta la mejor ventana)
+                  const saving = data.best.savingVsNow ?? 0; // 0..1
+                  const risk = data.best.risk ?? 0.5;
+                  const ok = saving < 0.07 && risk < 0.6;
+
+                  // ETA "actual" estimada desde savingVsNow (si no viene, estimamos suave)
+                  const bestEta = data.best.etaMin;
+                  const baselineEta =
+                    saving > 0
+                      ? Math.round(bestEta / Math.max(0.05, 1 - saving))
+                      : Math.round(bestEta * 1.05);
+
+                  const savedMin = Math.max(0, baselineEta - bestEta);
+                  const savingPct = Math.max(0, Math.round(saving * 100));
+
+                  // minutos hasta la salida óptima
+                  const bestAt = data.best.departAtISO;
+                  const waitMin = bestAt
+                    ? Math.max(
+                        0,
+                        Math.round(
+                          (new Date(bestAt).getTime() - Date.now()) / 60000,
+                        ),
+                      )
+                    : 0;
+
+                  return (
+                    <GoNowBadge
+                      status={ok ? "ok" : "wait"}
+                      bestAtISO={bestAt}
+                      waitMin={ok ? 0 : waitMin}
+                      savedMin={ok ? undefined : savedMin}
+                      savingPct={savingPct}
+                      locale={settings?.locale}
+                    />
+                  );
+                })()}
+              </div>
+            )}
           </SectionCard>
 
           <SectionCard>
