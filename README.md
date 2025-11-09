@@ -32,6 +32,20 @@ Pick origin/destination, get the **best time to leave**, with **ETA**, **risk**,
 
 ---
 
+## Screenshots
+
+  <p align="center">
+    <img src="public/media/plan.jpg" alt="Plan screen" width="420" />
+    <img src="public/media/result1.jpg" alt="Result 1" width="420" />
+    <img src="public/media/result2.jpg" alt="Result 2" width="420" />
+  </p>
+
+  <p align="center">
+    <img src="public/media/result3.jpg" alt="Result 3" width="420" />
+    <img src="public/media/history.jpg" alt="History screen" width="420" />
+    <img src="public/media/settings.jpg" alt="Settings screen" width="420" />
+  </p>
+
 ## Why it matters
 
 Congestion costs billions in time and fuel. Forecasting and advising **before** gridlock enables:
@@ -72,22 +86,35 @@ Create .env:
 - `pnpm build` — compila producción
 - `pnpm start` — arranca servidor
 
+
 ## Configuration
 All defaults live in Settings (persisted in localStorage):
-	•	Country → Holiday-aware risk (🇲🇽 mx, 🇺🇸 us, 🇩🇪 de).
-	•	Units/Locale → Numbers, currency, and labels.
-	•	Savings model → Fuel price, L/100km, typical trip distance.```
+  •	Country → Holiday-aware risk (🇲🇽 mx, 🇺🇸 us, 🇩🇪 de).
+  •	Units/Locale → Numbers, currency, and labels.
+  •	Savings model → Fuel price, L/100km, typical trip distance.```
 
 ## Holiday awareness
-	•	Minimal curated sets in lib/events/holidays.ts.
-	•	Driven by Settings → Country.
-	•	Reflected in Result via chips and in risk scoring features.
+  •	Minimal curated sets in lib/events/holidays.ts.
+  •	Driven by Settings → Country.
+  •	Reflected in Result via chips and in risk scoring features.
 ## What-if (planned)
-	•	Compare current best vs shifted departure (±X minutes) with $ / CO₂ / time deltas.
-	•	Event injection (concerts/holidays) for scenario testing.
+  •	Compare current best vs shifted departure (±X minutes) with $ / CO₂ / time deltas.
+  •	Event injection (concerts/holidays) for scenario testing.
 ## Known limitations
-	•	Forecast relies on sampling Google Routes (no raw historical speed DB).
-	•	Holiday lists are demo-size; expand per country for production.
-	•	No server DB; history/settings live in the browser.
+  •	Forecast relies on sampling Google Routes (no raw historical speed DB).
+  •	Holiday lists are demo-size; expand per country for production.
+  •	No server DB; history/settings live in the browser.
 
+## 🧪 Demo script (for judges)
+  1. Open Plan → CDMX → Puebla → Window 120 / Step 10 → Plan.
+  2. In Result: show Best, the Advisor, chips Holiday/Weekend, Save, Add to calendar.
+  3. Open History: view metrics and the saved item; use Replan.
+  4. Show Settings: change Country to us and explain how it impacts risk/holiday and cache.
+  5. Go to Forecast: show 72h and “Plan that window”.
+
+## 🤝 Contributing
+  PRs welcome. Standards: Strict TypeScript, ESLint, Tailwind.
+
+## License
+    MIT
 ````
