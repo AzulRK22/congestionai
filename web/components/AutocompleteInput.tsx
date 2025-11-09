@@ -8,7 +8,7 @@ import React, {
   useImperativeHandle,
 } from "react";
 import { MapPin, LocateFixed, X } from "lucide-react";
-import { usePlacesAutocomplete } from "@/lib/hooks/usePlacesAutocomplete"; // 👈 corrige path
+import { usePlacesAutocomplete } from "@/lib/hooks/usePlacesAutocomplete";
 
 const coordRe = /^@?-?\d+(\.\d+)?,\s*-?\d+(\.\d+)?$/;
 
@@ -28,7 +28,13 @@ type Props = {
   onPicked?: () => void;
 };
 
-export type AutocompleteInputRef = HTMLInputElement; // 👈 no-null
+type Pred = {
+  place_id: string;
+  description: string;
+  structured_formatting?: { main_text?: string; secondary_text?: string };
+};
+
+export type AutocompleteInputRef = HTMLInputElement;
 
 export const AutocompleteInput = forwardRef<HTMLInputElement, Props>(
   (
@@ -49,7 +55,6 @@ export const AutocompleteInput = forwardRef<HTMLInputElement, Props>(
   ) => {
     const containerRef = useRef<HTMLDivElement | null>(null);
     const inputRef = useRef<HTMLInputElement>(null);
-    // 👇 garantiza un HTMLInputElement (TS no-null)
     useImperativeHandle(ref, () => inputRef.current as HTMLInputElement);
 
     const { ready, preds, query, select, clear } =
@@ -62,6 +67,10 @@ export const AutocompleteInput = forwardRef<HTMLInputElement, Props>(
 
     const isActive = activeId ? activeId === selfId : true;
     const open = openLocal && isActive && preds.length > 0;
+
+    const listId = `${id ?? selfId}-listbox`;
+    const activeOptId =
+      open && hi >= 0 ? `${selfId}-opt-${preds[hi].place_id}` : undefined;
 
     const suppressNextRef = useRef(false);
 
@@ -87,7 +96,7 @@ export const AutocompleteInput = forwardRef<HTMLInputElement, Props>(
       setOpenLocal(true);
       setHi(-1);
       // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [debounced, q, ready, isActive]); // 👈 evitamos meter clear/query para no re-render loop
+    }, [debounced, q, ready, isActive]);
 
     usePointerDownOutside(containerRef, () => {
       if (openLocal) setOpenLocal(false);
@@ -127,7 +136,7 @@ export const AutocompleteInput = forwardRef<HTMLInputElement, Props>(
       } else if (e.key === "Enter") {
         if (hi >= 0) {
           e.preventDefault();
-          handleSelect(preds[hi].description);
+          handleSelect((preds[hi] as Pred).description);
         }
       } else if (e.key === "Escape") {
         setOpenLocal(false);
@@ -159,7 +168,7 @@ export const AutocompleteInput = forwardRef<HTMLInputElement, Props>(
     return (
       <div
         ref={containerRef}
-        className={`relative ${isActive ? "z-40" : "z-10"}`} // 👈 apilado claro
+        className={`relative ${isActive ? "z-40" : "z-10"}`}
         onFocus={() => setActiveId?.(selfId)}
       >
         {/* Ícono izquierda */}
@@ -177,16 +186,20 @@ export const AutocompleteInput = forwardRef<HTMLInputElement, Props>(
           placeholder={placeholder}
           autoComplete="off"
           enterKeyHint="search"
+          role="combobox"
           aria-expanded={open}
+          aria-controls={open ? listId : undefined}
+          aria-haspopup="listbox"
           aria-autocomplete="list"
+          aria-activedescendant={activeOptId}
           onFocus={() => {
             setActiveId?.(selfId);
             if (preds.length) setOpenLocal(true);
           }}
-          className="w-full h-11 rounded-xl border border-slate-200 bg-white pl-10 pr-22 text-sm placeholder:text-slate-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-900/10 focus:border-slate-300"
+          className="w-full h-11 rounded-xl border border-slate-200 bg-white pl-10 pr-20 text-sm placeholder:text-slate-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-900/10 focus:border-slate-300"
         />
 
-        {/* Botonera derecha (mejor icono y centrado) */}
+        {/* Botonera derecha */}
         <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1">
           {allowMyLocation && (
             <button
@@ -219,43 +232,48 @@ export const AutocompleteInput = forwardRef<HTMLInputElement, Props>(
         {/* Dropdown */}
         {open && (
           <div className="absolute z-50 mt-2 w-full rounded-xl border border-slate-200 bg-white shadow-xl ring-1 ring-black/5 overflow-hidden">
-            <ul className="max-h-72 overflow-auto">
-              {preds.map((p: any, i: number) => (
-                <li
-                  key={p.place_id}
-                  className={
-                    i === preds.length - 1 ? "" : "border-b border-slate-100"
-                  }
-                >
-                  <button
-                    type="button"
-                    // 👇 mouse down se ejecuta antes del blur y evita “click-through”
-                    onMouseDown={(e) => {
-                      e.preventDefault();
-                      handleSelect(p.description);
-                    }}
-                    onMouseEnter={() => setHi(i)}
-                    onMouseLeave={() => setHi(-1)}
-                    className={`flex w-full items-center gap-2 px-3 py-2 text-left text-[0.92rem] ${
-                      hi === i ? "bg-slate-100" : "bg-white"
-                    }`}
+            <ul id={listId} role="listbox" className="max-h-72 overflow-auto">
+              {(preds as Pred[]).map((p, i) => {
+                const optId = `${selfId}-opt-${p.place_id}`;
+                return (
+                  <li
+                    key={p.place_id}
+                    id={optId}
+                    role="option"
+                    aria-selected={hi === i}
+                    className={
+                      i === preds.length - 1 ? "" : "border-b border-slate-100"
+                    }
                   >
-                    <span className="h-5 w-5 shrink-0 grid place-items-center rounded-full border border-slate-300 bg-slate-50">
-                      <MapPin className="h-3 w-3 text-slate-500" />
-                    </span>
-                    <span className="truncate">
-                      <b>
-                        {p.structured_formatting?.main_text ?? p.description}
-                      </b>{" "}
-                      <span className="text-slate-500">
-                        {p.structured_formatting?.secondary_text
-                          ? `— ${p.structured_formatting.secondary_text}`
-                          : ""}
+                    <button
+                      type="button"
+                      onMouseDown={(e) => {
+                        e.preventDefault(); // cierra antes del blur
+                        handleSelect(p.description);
+                      }}
+                      onMouseEnter={() => setHi(i)}
+                      onMouseLeave={() => setHi(-1)}
+                      className={`flex w-full items-center gap-2 px-3 py-2 text-left text-[0.92rem] ${
+                        hi === i ? "bg-slate-100" : "bg-white"
+                      }`}
+                    >
+                      <span className="h-5 w-5 shrink-0 grid place-items-center rounded-full border border-slate-300 bg-slate-50">
+                        <MapPin className="h-3 w-3 text-slate-500" />
                       </span>
-                    </span>
-                  </button>
-                </li>
-              ))}
+                      <span className="truncate">
+                        <b>
+                          {p.structured_formatting?.main_text ?? p.description}
+                        </b>{" "}
+                        <span className="text-slate-500">
+                          {p.structured_formatting?.secondary_text
+                            ? `— ${p.structured_formatting.secondary_text}`
+                            : ""}
+                        </span>
+                      </span>
+                    </button>
+                  </li>
+                );
+              })}
             </ul>
           </div>
         )}
@@ -274,18 +292,25 @@ function useDebounce<T>(value: T, delay = 220) {
   }, [value, delay]);
   return v;
 }
+
 function usePointerDownOutside(
   ref: React.RefObject<HTMLElement>,
   onOutside: () => void,
 ) {
   useEffect(() => {
-    function handler(e: PointerEvent) {
+    const handler: EventListener = (e) => {
       const el = ref.current;
       if (!el) return;
-      if (e.target instanceof Node && el.contains(e.target)) return;
+      const target = e.target as Node | null;
+      if (target && el.contains(target)) return;
       onOutside();
-    }
+    };
+
+    // tipado correcto, sin any
     document.addEventListener("pointerdown", handler, { passive: true });
-    return () => document.removeEventListener("pointerdown", handler as any);
+
+    return () => {
+      document.removeEventListener("pointerdown", handler);
+    };
   }, [ref, onOutside]);
 }
