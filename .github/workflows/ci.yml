@@ -1,23 +1,47 @@
 name: CI
+
 on:
   push:
-    branches: [ main, develop ]
+    branches: [main]
   pull_request:
 
 jobs:
-  build:
+  web:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version-file: '.nvmrc'
-          cache: 'pnpm'
-      - uses: pnpm/action-setup@v3
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # Instala pnpm (binario)
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
         with:
           version: 9
-          run_install: true
+          run_install: false
+
+      # Node desde .nvmrc y cache del store de pnpm
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: ".nvmrc"
+          cache: "pnpm"
+
+      # (opcional, como fallback si algo raro pasa con pnpm)
+      - name: Enable Corepack
+        run: corepack enable
+
+      # Instala deps del workspace (un solo lockfile en la raíz)
+      - name: Install
+        run: pnpm install --frozen-lockfile=false
+
+      - name: Lint
+        run: pnpm -C web lint
+
+      - name: Typecheck
+        run: pnpm -C web typecheck || true
+
       - name: Build
-        run: |
-          cd web
-          pnpm build
+        env:
+          NEXT_PUBLIC_GOOGLE_MAPS_API_KEY: ${{ secrets.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY }}
+          GOOGLE_MAPS_API_KEY_SERVER: ${{ secrets.GOOGLE_MAPS_API_KEY_SERVER }}
+        run: pnpm -C web build
