@@ -34,17 +34,24 @@ Pick origin/destination, get the **best time to leave**, with **ETA**, **risk**,
 
 ## Screenshots
 
-  <p align="center">
-    <img src="public/media/plan.jpg" alt="Plan screen" width="420" />
-    <img src="public/media/result1.jpg" alt="Result 1" width="420" />
-    <img src="public/media/result2.jpg" alt="Result 2" width="420" />
-  </p>
+<p align="center">
+  <img src="web/public/media/plan.jpg" alt="Plan screen" width="420" />
+  <img src="web/public/media/result1.jpg" alt="Result 1" width="420" />
+  <img src="web/public/media/result2.jpg" alt="Result 2" width="420" />
+</p>
 
-  <p align="center">
-    <img src="public/media/result3.jpg" alt="Result 3" width="420" />
-    <img src="public/media/history.jpg" alt="History screen" width="420" />
-    <img src="public/media/settings.jpg" alt="Settings screen" width="420" />
-  </p>
+<p align="center">
+  <img src="web/public/media/result3.jpg" alt="Result 3" width="420" />
+  <img src="web/public/media/history.jpg" alt="History screen" width="420" />
+  <img src="web/public/media/settings.jpg" alt="Settings screen" width="420" />
+</p>
+
+**What you’re seeing**
+
+- **Plan** — planning/setup view
+- **Result 1–3** — evaluation panel (“Don’t leave yet” / “OK to go”) + suggested wait
+- **History** — previous evaluations
+- **Settings** — configuration
 
 ## Why it matters
 
