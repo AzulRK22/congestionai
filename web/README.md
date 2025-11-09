@@ -32,6 +32,20 @@ Pick origin/destination, get the **best time to leave**, with **ETA**, **risk**,
 
 ---
 
+## Screenshots
+
+  <p align="center">
+    <img src="public/media/plan.jpg" alt="Plan screen" width="420" />
+    <img src="public/media/result1.jpg" alt="Result 1" width="420" />
+    <img src="public/media/result2.jpg" alt="Result 2" width="420" />
+  </p>
+
+  <p align="center">
+    <img src="public/media/result3.jpg" alt="Result 3" width="420" />
+    <img src="public/media/history.jpg" alt="History screen" width="420" />
+    <img src="public/media/settings.jpg" alt="Settings screen" width="420" />
+  </p>
+
 ## Why it matters
 
 Congestion costs billions in time and fuel. Forecasting and advising **before** gridlock enables:
