@@ -9,17 +9,22 @@ import { isHolidayISO } from "@/lib/events/holidays";
 import { loadSettings, type AppSettings } from "@/lib/settings";
 import type { ForecastResponse } from "@/types/forecast";
 
+// Convierte minutos desde un baseMs → ISO
+function isoAt(baseMs: number, tMin: number) {
+  return new Date(baseMs + tMin * 60_000).toISOString();
+}
+
 export default function ForecastClient() {
   const sp = useSearchParams();
   const router = useRouter();
 
-  // --- URL params (con defaults amables)
+  // --- URL params (defaults)
   const originQ = sp.get("origin") ?? "";
   const destinationQ = sp.get("destination") ?? "";
   const horizonQ = Number(sp.get("h") ?? 72); // horas
-  const stepQ = Number(sp.get("step") ?? 60); // mins
+  const stepQ = Number(sp.get("step") ?? 60); // minutos
 
-  // --- Form state (editable en UI)
+  // --- Form state
   const [origin, setOrigin] = useState(originQ);
   const [destination, setDestination] = useState(destinationQ);
   const [horizon, setHorizon] = useState(
@@ -27,21 +32,19 @@ export default function ForecastClient() {
   );
   const [step, setStep] = useState(Number.isFinite(stepQ) ? stepQ : 60);
 
+  // Settings (cliente)
   const [settings, setSettings] = useState<AppSettings | null>(null);
-
-  useEffect(() => {
-    // sólo cliente
-    setSettings(loadSettings());
-  }, []);
-
+  useEffect(() => setSettings(loadSettings()), []);
   const country = (settings?.country ?? "mx") as "mx" | "us" | "de";
-  const valid = origin.trim().length > 2 && destination.trim().length > 2;
 
+  const valid = originQ.trim().length > 2 && destinationQ.trim().length > 2;
+
+  // Data
   const [data, setData] = useState<ForecastResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
-  // --- Fetch forecast al cargar o si cambian los params de la URL
+  // --- Fetch forecast al cambiar URL params
   useEffect(() => {
     if (!valid) {
       setData(null);
@@ -62,47 +65,47 @@ export default function ForecastClient() {
             destination: destinationQ,
             horizonHours: Number.isFinite(horizonQ) ? horizonQ : 72,
             stepMins: Number.isFinite(stepQ) ? stepQ : 60,
+            country,
           }),
         });
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const json = (await res.json()) as ForecastResponse;
         setData(json);
       } catch (e) {
-        if ((e as Error).name === "AbortError") return;
-        setErr((e as Error).message || "Error");
+        if ((e as Error).name !== "AbortError") {
+          setErr((e as Error).message || "Error");
+        }
       } finally {
         setLoading(false);
       }
     })();
     return () => ctrl.abort();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [originQ, destinationQ, horizonQ, stepQ, valid]);
+  }, [originQ, destinationQ, horizonQ, stepQ, country, valid]);
 
-  // Helper para timestamp: preferimos baseISO si la da el backend
-  function isoAt(baseISO: string | undefined, tMin: number) {
-    const base = baseISO ? new Date(baseISO) : new Date();
-    return new Date(base.getTime() + tMin * 60_000).toISOString();
-  }
+  // arriba ya importas useState y useEffect
+  const [hmBaseMs, setHmBaseMs] = useState(() => Date.now());
 
-  // --- Datos para Heatmap (normaliza riesgo a 0..1 por ETA relativa)
+  useEffect(() => {
+    setHmBaseMs(Date.now());
+  }, [originQ, destinationQ, horizonQ, stepQ]);
+
+  // --- Datos para Heatmap
   const heatmapPoints = useMemo(() => {
     if (!data?.samples?.length) return [];
     const maxEta = Math.max(...data.samples.map((s) => s.etaMin));
     return data.samples.map((s) => ({
-      timeISO: isoAt(data.baseISO, s.tMin),
+      timeISO: isoAt(hmBaseMs, s.tMin),
       etaMin: s.etaMin,
-      risk: s.etaMin / Math.max(1, maxEta),
+      risk: s.etaMin / Math.max(1, maxEta), // normalizado 0..1 para tintar fondo
     }));
-  }, [data]);
+  }, [data, hmBaseMs]);
 
-  const heatmapNowISO = useMemo(() => {
-    if (!data?.samples?.length) return undefined;
-    return isoAt(data.baseISO, data.samples[0].tMin);
-  }, [data]);
+  const heatmapNowISO = useMemo(() => isoAt(hmBaseMs, 0), [hmBaseMs]);
 
-  // Chips de contexto (si el rango toca weekend/holiday)
+  // Chips de contexto
   const heatmapChips = useMemo(() => {
-    if (!heatmapPoints.length) return [];
+    const chips: string[] = ["Forecast (beta)"];
+    if (!heatmapPoints.length) return chips;
     const hasWeekend = heatmapPoints.some((p) => {
       const d = new Date(p.timeISO).getDay();
       return d === 0 || d === 6;
@@ -110,13 +113,12 @@ export default function ForecastClient() {
     const hasHoliday = heatmapPoints.some((p) =>
       isHolidayISO(p.timeISO, country),
     );
-    const chips: string[] = [];
     if (hasWeekend) chips.push("Weekend");
     if (hasHoliday) chips.push("Holiday");
     return chips;
   }, [heatmapPoints, country]);
 
-  // --- Submit del form: sincroniza URL (para deep-link) y dispara fetch
+  // --- Submit: sincroniza URL (deep link) y dispara efecto
   function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     const q = new URLSearchParams({
@@ -233,7 +235,7 @@ export default function ForecastClient() {
               });
               return (
                 <li
-                  key={i}
+                  key={`${w.startISO}-${w.tMin}-${i}`}
                   className="flex items-center justify-between rounded-xl border bg-white p-3"
                 >
                   <div>
@@ -246,9 +248,9 @@ export default function ForecastClient() {
                     className="btn btn-outline"
                     onClick={() => {
                       const q = new URLSearchParams({
-                        origin,
-                        destination,
-                        offset: String(Math.max(1, w.tMin)), // salta directo a Result en esa ventana
+                        origin: originQ || origin,
+                        destination: destinationQ || destination,
+                        offset: String(Math.max(1, w.tMin)), // salta a Result en esa ventana
                         window: "120",
                         step: "10",
                       });
@@ -262,7 +264,7 @@ export default function ForecastClient() {
               );
             })}
           </ul>
-          {data.notes && data.notes.length > 0 && (
+          {!!data.notes?.length && (
             <p className="mt-2 text-xs text-slate-500">
               {data.notes.join(" · ")}
             </p>
