@@ -14,8 +14,8 @@ import {
   type HistoryItem,
 } from "@/lib/storage";
 import { HistoryItemCard } from "@/components/HistoryItemCard";
-import { HistoryMetrics } from "@/components/HistoryMetrics";
 import { Download, Upload, Search } from "lucide-react";
+import { HistoryMetrics } from "@/components/HistoryMetrics";
 
 export default function HistoryClient() {
   const router = useRouter();
@@ -23,19 +23,16 @@ export default function HistoryClient() {
   const [q, setQ] = useState("");
   const [range, setRange] = useState<"all" | "week" | "month">("all");
 
-  // cargar al montar y escuchar cambios cross-tab
   useEffect(() => {
     setItems(getHistory());
     const onStorage = (e: StorageEvent) => {
-      if (e.key && e.key.includes("congestion_history_v1")) {
-        setItems(getHistory());
-      }
+      if (!e.key || !e.key.includes("congestion_history_v1")) return;
+      setItems(getHistory());
     };
     window.addEventListener("storage", onStorage);
     return () => window.removeEventListener("storage", onStorage);
   }, []);
 
-  // filtros
   const filtered = useMemo(() => {
     const tnow = Date.now();
     const after =
@@ -45,6 +42,7 @@ export default function HistoryClient() {
           ? tnow - 30 * 864e5
           : 0;
     const needle = q.trim().toLowerCase();
+
     return items.filter((it) => {
       if (after && it.savedAt < after) return false;
       if (!needle) return true;
@@ -79,18 +77,15 @@ export default function HistoryClient() {
     removeHistoryItem(id);
     setItems(getHistory());
   }
-
   function onTogglePin(id: string) {
     togglePinHistory(id);
     setItems(getHistory());
   }
-
   function onClearAll() {
-    if (!confirm("¿Borrar todo el historial?")) return;
+    if (!confirm("Clear all history?")) return;
     clearHistory();
     setItems([]);
   }
-
   function onExport() {
     const json = exportHistory();
     const blob = new Blob([json], { type: "application/json" });
@@ -99,7 +94,6 @@ export default function HistoryClient() {
     a.download = "congestionai-history.json";
     a.click();
   }
-
   function onImport(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -109,9 +103,9 @@ export default function HistoryClient() {
         const data = JSON.parse(String(reader.result)) as HistoryItem[];
         importHistory(data);
         setItems(getHistory());
-        alert("Historial importado ✅");
+        alert("History imported ✅");
       } catch {
-        alert("Archivo inválido");
+        alert("Invalid file");
       }
     };
     reader.readAsText(file);
@@ -120,46 +114,53 @@ export default function HistoryClient() {
 
   return (
     <div className="space-y-4">
+      {/* Metrics */}
+      <SectionCard>
+        <HistoryMetrics items={filtered} />
+      </SectionCard>
+
+      {/* Filters */}
       <SectionCard>
         <div className="grid gap-3 md:grid-cols-[1fr_auto_auto] md:items-end">
           <div>
-            <label className="text-sm block mb-1">Buscar</label>
+            <label className="text-sm block mb-1">Search</label>
             <div className="relative">
               <input
-                className="input w-full pl-9"
-                placeholder="Origen o destino…"
+                className="h-10 w-full rounded-xl border border-slate-300 bg-white px-3 pl-9 text-sm outline-none focus:ring-2 focus:ring-slate-200"
+                placeholder="Origin or destination…"
                 value={q}
                 onChange={(e) => setQ(e.target.value)}
+                aria-label="Search history"
               />
               <Search
                 size={16}
-                className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500"
+                className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none"
               />
             </div>
           </div>
 
           <div>
-            <label className="text-sm block mb-1">Rango</label>
+            <label className="text-sm block mb-1">Range</label>
             <select
-              className="input"
+              className="h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm outline-none focus:ring-2 focus:ring-slate-200"
               value={range}
               onChange={(e) =>
                 setRange(e.target.value as "all" | "week" | "month")
               }
             >
-              <option value="all">Todo</option>
-              <option value="week">Última semana</option>
-              <option value="month">Último mes</option>
+              <option value="all">All</option>
+              <option value="week">Last 7 days</option>
+              <option value="month">Last 30 days</option>
             </select>
           </div>
 
           <div className="flex gap-2">
             <Button onClick={onExport}>
-              <Download size={16} className="mr-2" /> Exportar
+              <Download size={16} className="mr-2" /> Export
             </Button>
             <label className="btn btn-outline cursor-pointer">
               <Upload size={16} className="mr-2" />
-              Importar
+              Import
               <input
                 type="file"
                 accept="application/json"
@@ -171,35 +172,35 @@ export default function HistoryClient() {
         </div>
       </SectionCard>
 
-      {/* MÉTRICAS con los elementos filtrados */}
-      <HistoryMetrics items={filtered} />
-
+      {/* List / Empty */}
       {filtered.length === 0 ? (
         <SectionCard>
           <div className="text-sm text-slate-600">
-            No hay elementos en tu historial. Planea una ruta y guárdala desde
-            el resultado.
+            No history yet. Plan a route and click <em>Save to history</em> in
+            the result.
           </div>
         </SectionCard>
       ) : (
-        <div className="grid gap-3">
-          {filtered.map((it) => (
-            <HistoryItemCard
-              key={it.id}
-              item={it}
-              onOpenResult={openResult}
-              onReplan={replan}
-              onDelete={onDelete}
-              onTogglePin={onTogglePin}
-            />
-          ))}
-        </div>
+        <SectionCard>
+          <ul className="divide-y">
+            {filtered.map((it) => (
+              <HistoryItemCard
+                key={it.id}
+                item={it}
+                onOpenResult={openResult}
+                onReplan={replan}
+                onDelete={onDelete}
+                onTogglePin={onTogglePin}
+                variant="row" // 👈 forzamos fila compacta
+              />
+            ))}
+          </ul>
+        </SectionCard>
       )}
-
       {items.length > 0 && (
         <div className="flex justify-end">
           <button className="btn btn-outline" onClick={onClearAll}>
-            Limpiar historial
+            Clear history
           </button>
         </div>
       )}

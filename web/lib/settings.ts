@@ -6,16 +6,14 @@ export type CountryCode = "mx" | "us" | "de";
 export type AppSettings = {
   provider: Provider;
   units: Units;
+  country: CountryCode;
   city: string;
   locale: string;
-  country: CountryCode;
 
-  // Ahorro / sostenibilidad
-  fuelPricePerL: number; // moneda local por litro (demo)
+  fuelPricePerL: number; // per liter
   carLper100km: number; // L/100km
-  defaultTripKm: number; // distancia típica del trayecto
+  defaultTripKm: number;
 
-  // Planner defaults
   budgetModeDefault: boolean;
   windowMinsDefault: number;
   stepMinsDefault: number;
@@ -28,9 +26,9 @@ const KEY = "app_settings_v1";
 export const defaultSettings: AppSettings = {
   provider: "google",
   units: "metric",
-  city: "CDMX",
-  locale: "es-MX",
   country: "mx",
+  city: "Mexico City",
+  locale: "en-US",
 
   fuelPricePerL: 25,
   carLper100km: 8.5,
@@ -52,36 +50,38 @@ function safeParse<T>(s: string | null): T | null {
   }
 }
 
+function hasLS(): boolean {
+  return typeof window !== "undefined" && !!window.localStorage;
+}
+
 export function loadSettings(): AppSettings {
-  const saved = safeParse<AppSettings>(
-    typeof window !== "undefined" ? localStorage.getItem(KEY) : null,
-  );
+  if (!hasLS()) return { ...defaultSettings }; // SSR: devuelve defaults
+  const saved = safeParse<AppSettings>(window.localStorage.getItem(KEY));
   return { ...defaultSettings, ...(saved ?? {}) };
 }
 
 export function saveSettings(s: AppSettings) {
-  if (typeof window !== "undefined") {
-    localStorage.setItem(KEY, JSON.stringify(s));
-  }
+  if (!hasLS()) return; // SSR no-op
+  window.localStorage.setItem(KEY, JSON.stringify(s));
 }
 
-/** Sincroniza defaults del planner a las claves que usa PlannerForm */
+/** Keep PlannerForm defaults in sync with Settings */
 export function syncPlannerDefaultsToLocalStorage(s: AppSettings) {
-  if (typeof window === "undefined") return;
+  if (!hasLS()) return; // SSR no-op
   const planOpts = {
     departOffsetMin: 0,
     windowMins: s.windowMinsDefault,
     stepMins: s.stepMinsDefault,
-    refine: s.budgetModeDefault, // cuando budget-mode => refine on
+    refine: s.budgetModeDefault,
     avoidTolls: s.avoidTollsDefault,
     avoidHighways: s.avoidHighwaysDefault,
     budgetMode: s.budgetModeDefault,
   };
-  localStorage.setItem("plan_opts", JSON.stringify(planOpts));
-  localStorage.setItem("provider", s.provider);
-  localStorage.setItem("city", s.city);
-  localStorage.setItem("units", s.units);
-  localStorage.setItem("country", s.country);
+  window.localStorage.setItem("plan_opts", JSON.stringify(planOpts));
+  window.localStorage.setItem("provider", s.provider);
+  window.localStorage.setItem("city", s.city);
+  window.localStorage.setItem("units", s.units);
+  window.localStorage.setItem("country", s.country);
 }
 
 export function resetSettings() {
@@ -89,7 +89,7 @@ export function resetSettings() {
   syncPlannerDefaultsToLocalStorage(defaultSettings);
 }
 
-/** Estado de llaves públicas (las privadas van en .env del server) */
+/** Public API flags (client). Server keys live in .env */
 export function apiStatus() {
   const hasGmaps = Boolean(process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY);
   const hasMapKit = Boolean(process.env.NEXT_PUBLIC_MAPKIT_TOKEN);

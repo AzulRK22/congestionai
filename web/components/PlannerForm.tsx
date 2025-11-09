@@ -1,18 +1,21 @@
 "use client";
 
-import { useRef, useState, useEffect } from "react";
-import { ArrowUpDown, ChevronDown } from "lucide-react";
-import { AutocompleteInput } from "@/components/AutocompleteInput";
+import { useRef, useState, useEffect, useMemo } from "react";
+import { ArrowUpDown, ChevronDown, Info } from "lucide-react";
+import {
+  AutocompleteInput,
+  AutocompleteInputRef,
+} from "@/components/AutocompleteInput";
 import { Button } from "@/components/ui/Button";
 
 export type PlanOptions = {
-  departOffsetMin: number; // 0 = salir ahora
-  windowMins: number; // p. ej., 120
-  stepMins: number; // p. ej., 10 o 20
-  refine: boolean; // refinamiento fino en server
+  departOffsetMin: number; // 0 = depart now
+  windowMins: number; // e.g., 120
+  stepMins: number; // e.g., 10 or 20
+  refine: boolean; // server fine-tune around best time
   avoidTolls: boolean;
   avoidHighways: boolean;
-  budgetMode: boolean; // bandera solo para UI
+  budgetMode: boolean; // UI label: Credit saver
 };
 
 export function PlannerForm({
@@ -29,70 +32,77 @@ export function PlannerForm({
   const [origin, setOrigin] = useState(initialOrigin);
   const [dest, setDest] = useState(initialDestination);
 
-  // Preferencias (defaults + localStorage + props iniciales)
   const [opts, setOpts] = useState<PlanOptions>(() => {
+    const saved =
+      typeof window !== "undefined"
+        ? window.localStorage.getItem("plan_opts")
+        : null;
     const base: PlanOptions = {
       departOffsetMin: 0,
       windowMins: 120,
       stepMins: 20,
-      refine: true, // menos llamadas por defecto
+      refine: true, // on with credit-saver by default
       avoidTolls: false,
       avoidHighways: false,
       budgetMode: true,
     };
-    if (typeof window === "undefined") return { ...base, ...initialOptions };
-    try {
-      const raw = window.localStorage.getItem("plan_opts");
-      const saved = raw ? (JSON.parse(raw) as Partial<PlanOptions>) : {};
-      return { ...base, ...saved, ...initialOptions };
-    } catch {
-      return { ...base, ...initialOptions };
-    }
+    return { ...base, ...(saved ? JSON.parse(saved) : {}), ...initialOptions };
   });
 
-  // Avanzado colapsable y control de dropdown activo entre inputs
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [activeId, setActiveId] = useState<string | null>(null);
+  const originRef = useRef<AutocompleteInputRef>(null);
+  const destRef = useRef<AutocompleteInputRef>(null);
 
-  // Refs (HTMLInputElement | null) compatibles con el forwardRef del input
-  const originRef = useRef<HTMLInputElement | null>(null);
-  const destRef = useRef<HTMLInputElement | null>(null);
+  // --- fix “[object Event]”: coercers aceptan string o event ---
+  const handleOriginChange = (
+    v: string | React.ChangeEvent<HTMLInputElement>,
+  ) => {
+    setOrigin(typeof v === "string" ? v : (v?.target?.value ?? ""));
+  };
+  const handleDestChange = (
+    v: string | React.ChangeEvent<HTMLInputElement>,
+  ) => {
+    setDest(typeof v === "string" ? v : (v?.target?.value ?? ""));
+  };
 
-  // Persistencia de opciones
   useEffect(() => {
-    try {
-      window.localStorage.setItem("plan_opts", JSON.stringify(opts));
-    } catch {}
+    window.localStorage.setItem("plan_opts", JSON.stringify(opts));
   }, [opts]);
 
-  const valid = origin.trim().length > 2 && dest.trim().length > 2;
+  const valid = useMemo(
+    () => origin.trim().length > 2 && dest.trim().length > 2,
+    [origin, dest],
+  );
 
   function swap() {
-    const o = origin;
     setOrigin(dest);
-    setDest(o);
+    setDest(origin);
     setActiveId("origin");
-    originRef.current?.focus();
+    originRef.current?.focus?.();
   }
 
-  // Presets de budget-mode
-  function toggleBudgetMode(v: boolean) {
+  // Credit saver toggle applies presets
+  function toggleCreditSaver(v: boolean) {
     setOpts((o) => {
       const next = { ...o, budgetMode: v };
       if (v) {
-        next.windowMins = 120; // 2h
-        next.stepMins = 20; // ~7 llamadas
-        next.refine = true; // +refinamiento local
+        next.windowMins = 120;
+        next.stepMins = 20;
+        next.refine = true;
       } else {
         next.windowMins = 120;
-        next.stepMins = 10; // ~13 llamadas
+        next.stepMins = 10;
         next.refine = false;
       }
       return next;
     });
   }
 
-  // Estimador de llamadas a Routes v2
+  // quick presets (rename to avoid global setInterval)
+  const setWindow = (m: number) => setOpts((o) => ({ ...o, windowMins: m }));
+  const setIntervalMin = (m: number) => setOpts((o) => ({ ...o, stepMins: m }));
+
   const coarseCalls =
     Math.floor(opts.windowMins / Math.max(1, opts.stepMins)) + 1;
   const refineCalls = opts.refine ? 5 : 0;
@@ -112,13 +122,14 @@ export function PlannerForm({
         selfId="origin"
         activeId={activeId}
         setActiveId={setActiveId}
-        placeholder="Origen"
+        placeholder="Origin"
+        aria-label="Origin"
         value={origin}
-        onChange={setOrigin}
+        onChange={handleOriginChange}
         allowMyLocation
         onPicked={() => {
           setActiveId("dest");
-          destRef.current?.focus();
+          destRef.current?.focus?.();
         }}
       />
 
@@ -127,43 +138,94 @@ export function PlannerForm({
         selfId="dest"
         activeId={activeId}
         setActiveId={setActiveId}
-        placeholder="Destino"
+        placeholder="Destination"
+        aria-label="Destination"
         value={dest}
-        onChange={setDest}
+        onChange={handleDestChange}
         onPicked={() => setActiveId(null)}
       />
 
       <div className="flex items-center gap-2 pt-1">
-        <Button type="submit" disabled={!valid}>
-          Planear
+        <Button type="submit" disabled={!valid} aria-label="Plan">
+          Plan
         </Button>
 
         <button
           type="button"
           onClick={swap}
           className="btn btn-outline"
-          aria-label="Intercambiar"
+          aria-label="Swap origin and destination"
+          title="Swap origin and destination"
         >
-          <ArrowUpDown size={16} className="mr-2" /> Intercambiar
+          <ArrowUpDown size={16} className="mr-2" /> Swap
         </button>
 
-        {/* Estimador de llamadas */}
         <span
-          className="ml-auto text-xs px-2 py-1 rounded-full border bg-white text-slate-600"
-          title="Estimación de llamadas a Routes v2 (cuida tus créditos)"
+          className="ml-auto text-xs px-2 py-1 rounded-full border bg-white text-slate-600 inline-flex items-center gap-1"
+          title="Estimated Google Routes API calls"
+          aria-label="Estimated API calls"
         >
-          ≈ {estCalls} llamadas
+          ≈ {estCalls} API calls
         </span>
       </div>
 
-      {/* Avanzado */}
+      {/* Quick presets without custom 'chip' class */}
+      <div className="grid gap-2 sm:grid-cols-2">
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="text-xs text-slate-600">Planning window</span>
+          {[60, 120, 180].map((m) => {
+            const active = opts.windowMins === m;
+            return (
+              <button
+                key={m}
+                type="button"
+                onClick={() => setWindow(m)}
+                aria-label={`Set planning window to ${m} minutes`}
+                className={`text-xs px-2 py-1 rounded-full border ${
+                  active
+                    ? "bg-slate-900 text-white border-slate-900"
+                    : "bg-white text-slate-700 border-slate-300 hover:bg-slate-50"
+                }`}
+              >
+                {m} min
+              </button>
+            );
+          })}
+        </div>
+
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="text-xs text-slate-600">Interval</span>
+          {[5, 10, 20].map((m) => {
+            const active = opts.stepMins === m;
+            return (
+              <button
+                key={m}
+                type="button"
+                onClick={() => setIntervalMin(m)}
+                aria-label={`Set interval to ${m} minutes`}
+                className={`text-xs px-2 py-1 rounded-full border ${
+                  active
+                    ? "bg-slate-900 text-white border-slate-900"
+                    : "bg-white text-slate-700 border-slate-300 hover:bg-slate-50"
+                }`}
+              >
+                {m} min
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* More options */}
       <div className="mt-1">
         <button
           type="button"
           onClick={() => setShowAdvanced((s) => !s)}
           className="inline-flex items-center text-sm text-slate-700 hover:underline"
+          aria-expanded={showAdvanced}
+          aria-controls="advanced-options"
         >
-          Opciones avanzadas
+          More options
           <ChevronDown
             size={14}
             className={`ml-1 transition ${showAdvanced ? "rotate-180" : ""}`}
@@ -172,23 +234,36 @@ export function PlannerForm({
       </div>
 
       {showAdvanced && (
-        <div className="rounded-xl border p-3 grid gap-3 bg-white">
-          {/* Budget mode */}
+        <div
+          id="advanced-options"
+          className="rounded-xl border p-3 grid gap-3 bg-white"
+        >
+          {/* Credit saver */}
           <label className="flex items-center gap-2 text-sm">
             <input
               type="checkbox"
               checked={opts.budgetMode}
-              onChange={(e) => toggleBudgetMode(e.target.checked)}
+              onChange={(e) => toggleCreditSaver(e.target.checked)}
             />
-            Budget-mode (menos llamadas + refinamiento local)
+            Credit saver
+            <span
+              className="inline-flex items-center text-xs text-slate-500 ml-1"
+              title="Fewer API calls + local fine-tune"
+            >
+              <Info size={14} className="mr-1" />
+              Fewer API calls + fine-tune
+            </span>
           </label>
 
-          {/* Ventana y paso */}
+          {/* Exact controls */}
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="text-sm block mb-1">Ventana (min)</label>
+              <label className="text-sm block mb-1">
+                Planning window (min)
+              </label>
               <input
                 className="input"
+                inputMode="numeric"
                 type="number"
                 min={20}
                 max={240}
@@ -203,9 +278,10 @@ export function PlannerForm({
               />
             </div>
             <div>
-              <label className="text-sm block mb-1">Paso (min)</label>
+              <label className="text-sm block mb-1">Interval (min)</label>
               <input
                 className="input"
+                inputMode="numeric"
                 type="number"
                 min={5}
                 max={60}
@@ -221,7 +297,7 @@ export function PlannerForm({
             </div>
           </div>
 
-          {/* Refinamiento */}
+          {/* Fine tune */}
           <label className="flex items-center gap-2 text-sm">
             <input
               type="checkbox"
@@ -230,17 +306,18 @@ export function PlannerForm({
                 setOpts((o) => ({ ...o, refine: e.target.checked }))
               }
             />
-            Refinar alrededor del mínimo (±20 min con step=5 min)
+            Fine-tune around best time (±20 min, 5-min interval)
           </label>
 
-          {/* Offset de salida */}
+          {/* Depart in */}
           <div>
-            <label className="text-sm block mb-1">Salir en (min)</label>
+            <label className="text-sm block mb-1">Depart in (min)</label>
             <input
               className="input"
+              inputMode="numeric"
               type="number"
               min={0}
-              max={360}
+              max={10080}
               step={5}
               value={opts.departOffsetMin}
               onChange={(e) =>
@@ -250,10 +327,10 @@ export function PlannerForm({
                 }))
               }
             />
-            <p className="text-xs text-slate-500 mt-1">0 = salir ahora</p>
+            <p className="text-xs text-slate-500 mt-1">0 = depart now</p>
           </div>
 
-          {/* Modificadores de ruta */}
+          {/* Route modifiers */}
           <div className="grid grid-cols-2 gap-3">
             <label className="flex items-center gap-2 text-sm">
               <input
@@ -263,7 +340,7 @@ export function PlannerForm({
                   setOpts((o) => ({ ...o, avoidTolls: e.target.checked }))
                 }
               />
-              Evitar cuotas/peajes
+              Avoid tolls
             </label>
             <label className="flex items-center gap-2 text-sm">
               <input
@@ -273,14 +350,14 @@ export function PlannerForm({
                   setOpts((o) => ({ ...o, avoidHighways: e.target.checked }))
                 }
               />
-              Evitar autopistas
+              Avoid highways (motorways)
             </label>
           </div>
         </div>
       )}
 
       <p className="mt-1 text-xs text-slate-500">
-        Tip: puedes pegar <code>@19.4326,-99.1332</code> o{" "}
+        Tip: you can paste <code>@19.4326,-99.1332</code> or{" "}
         <code>19.4326,-99.1332</code>.
       </p>
     </form>

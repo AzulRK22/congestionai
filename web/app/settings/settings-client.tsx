@@ -1,4 +1,4 @@
-// web/app/settings/settings-client.tsx (solo dif respecto a tu versión: campo País + guardado)
+// web/app/settings/settings-client.tsx
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
@@ -16,8 +16,8 @@ import {
 
 type Profile = { name: string; l100: number };
 const PROFILES: Profile[] = [
-  { name: "Moto/Hybrid", l100: 4.5 },
-  { name: "Sedán urbano", l100: 7.5 },
+  { name: "Moto / Hybrid", l100: 4.5 },
+  { name: "City sedan", l100: 7.5 },
   { name: "SUV", l100: 10.5 },
   { name: "Pickup", l100: 13.0 },
 ];
@@ -26,6 +26,7 @@ export default function SettingsClient() {
   const [s, setS] = useState<AppSettings>(defaultSettings);
   const { hasGmaps, hasMapKit } = apiStatus();
 
+  // cargar settings en cliente
   useEffect(() => {
     setS(loadSettings());
   }, []);
@@ -61,14 +62,14 @@ export default function SettingsClient() {
     };
     saveSettings(next);
     syncPlannerDefaultsToLocalStorage(next);
-    alert("Settings guardados y sincronizados con el Planner ✅");
+    alert("Settings saved and synced with Planner ✅");
   }
 
   function onReset() {
-    if (!confirm("¿Restablecer configuración por defecto?")) return;
+    if (!confirm("Reset to defaults?")) return;
     resetSettings();
     setS(loadSettings());
-    alert("Settings restablecidos ✅");
+    alert("Settings reset ✅");
   }
 
   function onExport() {
@@ -92,9 +93,9 @@ export default function SettingsClient() {
         saveSettings(merged);
         syncPlannerDefaultsToLocalStorage(merged);
         setS(merged);
-        alert("Settings importados ✅");
+        alert("Settings imported ✅");
       } catch {
-        alert("Archivo inválido");
+        alert("Invalid file");
       }
     };
     reader.readAsText(f);
@@ -103,41 +104,38 @@ export default function SettingsClient() {
 
   return (
     <div className="space-y-4">
-      {/* Estado APIs (igual que ya tienes) */}
-      <SectionCard>
-        <div className="grid gap-3 sm:grid-cols-2">
-          <div className="rounded-xl border p-3 bg-white">
-            <div className="text-xs text-slate-500">Google Maps (cliente)</div>
-            <div
-              className={`text-sm mt-1 ${hasGmaps ? "text-emerald-600" : "text-red-600"}`}
-            >
-              {hasGmaps
-                ? "OK – NEXT_PUBLIC_GOOGLE_MAPS_API_KEY presente"
-                : "Falta configurar NEXT_PUBLIC_GOOGLE_MAPS_API_KEY"}
-            </div>
-          </div>
-          <div className="rounded-xl border p-3 bg-white">
-            <div className="text-xs text-slate-500">Apple MapKit (cliente)</div>
-            <div
-              className={`text-sm mt-1 ${hasMapKit ? "text-emerald-600" : "text-amber-600"}`}
-            >
-              {hasMapKit
-                ? "OK – NEXT_PUBLIC_MAPKIT_TOKEN presente"
-                : "Opcional – añade NEXT_PUBLIC_MAPKIT_TOKEN si usas Apple Maps"}
-            </div>
-          </div>
-        </div>
-        <p className="text-xs text-slate-500 mt-2">
-          Las llaves privadas del servidor (Routes v2) van en <code>.env</code>.
-        </p>
-      </SectionCard>
+      {/* Toolbar */}
+      <div className="flex justify-end gap-2">
+        <label className="btn btn-outline cursor-pointer">
+          Import
+          <input
+            type="file"
+            accept="application/json"
+            className="hidden"
+            onChange={onImport}
+          />
+        </label>
+        <button className="btn btn-outline" onClick={onExport}>
+          Export
+        </button>
+        <button className="btn btn-outline" onClick={onReset}>
+          Reset
+        </button>
+        <Button onClick={onSave} disabled={!dirty}>
+          Save
+        </Button>
+      </div>
 
-      {/* Preferencias generales */}
+      {/* Region & units */}
       <SectionCard>
-        <h3 className="font-semibold mb-3">Preferencias generales</h3>
+        <h3 className="font-semibold mb-3">Region & units</h3>
+        <p className="text-xs text-slate-500 mb-3">
+          Holiday awareness uses <b>Country</b>. Locale affects number & date
+          formats.
+        </p>
         <div className="grid gap-3 sm:grid-cols-2">
           <div>
-            <label className="text-sm block mb-1">Mapa por defecto</label>
+            <label className="text-sm block mb-1">Default map</label>
             <select
               className="input"
               value={s.provider}
@@ -147,6 +145,7 @@ export default function SettingsClient() {
                   provider: e.target.value as AppSettings["provider"],
                 })
               }
+              aria-label="Default map provider"
             >
               <option value="google">Google Maps</option>
               <option value="apple">Apple MapKit</option>
@@ -154,21 +153,22 @@ export default function SettingsClient() {
           </div>
 
           <div>
-            <label className="text-sm block mb-1">Unidades</label>
+            <label className="text-sm block mb-1">Units</label>
             <select
               className="input"
               value={s.units}
               onChange={(e) =>
                 setS({ ...s, units: e.target.value as AppSettings["units"] })
               }
+              aria-label="Units"
             >
-              <option value="metric">Métrico</option>
+              <option value="metric">Metric</option>
               <option value="imperial">Imperial</option>
             </select>
           </div>
 
           <div>
-            <label className="text-sm block mb-1">País</label>
+            <label className="text-sm block mb-1">Country</label>
             <select
               className="input"
               value={s.country}
@@ -178,47 +178,50 @@ export default function SettingsClient() {
                   country: e.target.value as AppSettings["country"],
                 })
               }
+              aria-label="Country"
             >
-              <option value="mx">México 🇲🇽</option>
-              <option value="us">Estados Unidos 🇺🇸</option>
-              <option value="de">Alemania 🇩🇪</option>
+              <option value="mx">Mexico 🇲🇽</option>
+              <option value="us">United States 🇺🇸</option>
+              <option value="de">Germany 🇩🇪</option>
             </select>
             <p className="text-xs text-slate-500 mt-1">
-              Afecta feriados y el riesgo.
+              Used for holiday-aware risk in Result.
             </p>
           </div>
 
           <div>
-            <label className="text-sm block mb-1">Ciudad</label>
+            <label className="text-sm block mb-1">City</label>
             <input
               className="input"
               value={s.city}
               onChange={(e) => setS({ ...s, city: e.target.value })}
+              placeholder="e.g., Mexico City"
+              aria-label="City"
             />
           </div>
 
-          <div>
+          <div className="sm:col-span-2">
             <label className="text-sm block mb-1">Locale</label>
             <input
               className="input"
               value={s.locale}
               onChange={(e) => setS({ ...s, locale: e.target.value })}
-              placeholder="es-MX"
+              placeholder="en-US"
+              aria-label="Locale"
             />
           </div>
         </div>
       </SectionCard>
 
-      {/* Sostenibilidad / ahorro (igual que ya tienes con perfiles) */}
+      {/* Savings & CO₂ */}
       <SectionCard>
-        <h3 className="font-semibold mb-3">
-          Modelo de ahorro y CO₂ (defaults)
-        </h3>
+        <h3 className="font-semibold mb-3">Savings & CO₂ (defaults)</h3>
+        <p className="text-xs text-slate-500 mb-3">
+          These values drive money/fuel/CO₂ estimates in Result and History.
+        </p>
         <div className="grid gap-3 sm:grid-cols-3">
           <div>
-            <label className="text-sm block mb-1">
-              Precio combustible (por L)
-            </label>
+            <label className="text-sm block mb-1">Fuel price (per L)</label>
             <input
               className="input"
               type="number"
@@ -228,10 +231,14 @@ export default function SettingsClient() {
               onChange={(e) =>
                 setS({ ...s, fuelPricePerL: Number(e.target.value) })
               }
+              aria-label="Fuel price per liter"
             />
           </div>
+
           <div>
-            <label className="text-sm block mb-1">Consumo (L/100 km)</label>
+            <label className="text-sm block mb-1">
+              Consumption (L / 100 km)
+            </label>
             <input
               className="input"
               type="number"
@@ -241,6 +248,7 @@ export default function SettingsClient() {
               onChange={(e) =>
                 setS({ ...s, carLper100km: Number(e.target.value) })
               }
+              aria-label="Consumption L per 100 km"
             />
             <div className="flex flex-wrap gap-2 mt-2">
               {PROFILES.map((p) => (
@@ -249,15 +257,17 @@ export default function SettingsClient() {
                   type="button"
                   className="btn btn-outline text-xs"
                   onClick={() => setS({ ...s, carLper100km: p.l100 })}
+                  aria-label={`Set profile ${p.name}`}
                 >
                   {p.name} • {p.l100}
                 </button>
               ))}
             </div>
           </div>
+
           <div>
             <label className="text-sm block mb-1">
-              Distancia típica del viaje (km)
+              Typical trip distance (km)
             </label>
             <input
               className="input"
@@ -268,14 +278,19 @@ export default function SettingsClient() {
               onChange={(e) =>
                 setS({ ...s, defaultTripKm: Number(e.target.value) })
               }
+              aria-label="Default trip distance (km)"
             />
           </div>
         </div>
+        <p className="text-xs text-slate-500 mt-2">
+          Note: internal calculations use liters; if you select Imperial, only
+          the display in some screens converts to gal.
+        </p>
       </SectionCard>
 
-      {/* Planner defaults (igual) */}
+      {/* Planner defaults */}
       <SectionCard>
-        <h3 className="font-semibold mb-3">Planner (valores por defecto)</h3>
+        <h3 className="font-semibold mb-3">Planner defaults</h3>
         <div className="grid gap-3 sm:grid-cols-3">
           <label className="flex items-center gap-2 text-sm">
             <input
@@ -284,12 +299,13 @@ export default function SettingsClient() {
               onChange={(e) =>
                 setS({ ...s, budgetModeDefault: e.target.checked })
               }
+              aria-label="Budget mode default"
             />
-            Budget-mode por defecto
+            Budget mode ON
           </label>
 
           <div>
-            <label className="text-sm block mb-1">Ventana (min)</label>
+            <label className="text-sm block mb-1">Window (min)</label>
             <input
               className="input"
               type="number"
@@ -300,11 +316,12 @@ export default function SettingsClient() {
               onChange={(e) =>
                 setS({ ...s, windowMinsDefault: Number(e.target.value) })
               }
+              aria-label="Default window minutes"
             />
           </div>
 
           <div>
-            <label className="text-sm block mb-1">Paso (min)</label>
+            <label className="text-sm block mb-1">Step (min)</label>
             <input
               className="input"
               type="number"
@@ -315,6 +332,7 @@ export default function SettingsClient() {
               onChange={(e) =>
                 setS({ ...s, stepMinsDefault: Number(e.target.value) })
               }
+              aria-label="Default step minutes"
             />
           </div>
 
@@ -325,8 +343,9 @@ export default function SettingsClient() {
               onChange={(e) =>
                 setS({ ...s, avoidTollsDefault: e.target.checked })
               }
+              aria-label="Avoid tolls default"
             />
-            Evitar cuotas/peajes
+            Avoid tolls
           </label>
 
           <label className="flex items-center gap-2 text-sm">
@@ -336,33 +355,44 @@ export default function SettingsClient() {
               onChange={(e) =>
                 setS({ ...s, avoidHighwaysDefault: e.target.checked })
               }
+              aria-label="Avoid highways default"
             />
-            Evitar autopistas
+            Avoid highways
           </label>
         </div>
       </SectionCard>
 
-      {/* Acciones */}
-      <div className="flex flex-wrap gap-2 justify-end">
-        <label className="btn btn-outline cursor-pointer">
-          Importar
-          <input
-            type="file"
-            accept="application/json"
-            className="hidden"
-            onChange={onImport}
-          />
-        </label>
-        <button className="btn btn-outline" onClick={onExport}>
-          Exportar
-        </button>
-        <button className="btn btn-outline" onClick={onReset}>
-          Restablecer
-        </button>
-        <Button onClick={onSave} disabled={!dirty}>
-          Guardar
-        </Button>
-      </div>
+      {/* Developer (colapsable) */}
+      <details className="rounded-2xl border bg-white p-3 open:shadow-sm">
+        <summary className="cursor-pointer text-sm font-medium text-slate-700">
+          Developer (API keys & diagnostics)
+        </summary>
+        <div className="grid gap-3 sm:grid-cols-2 mt-3">
+          <div className="rounded-xl border p-3 bg-white">
+            <div className="text-xs text-slate-500">Google Maps (client)</div>
+            <div
+              className={`text-sm mt-1 ${hasGmaps ? "text-emerald-600" : "text-red-600"}`}
+            >
+              {hasGmaps
+                ? "OK — NEXT_PUBLIC_GOOGLE_MAPS_API_KEY found"
+                : "Missing NEXT_PUBLIC_GOOGLE_MAPS_API_KEY"}
+            </div>
+          </div>
+          <div className="rounded-xl border p-3 bg-white">
+            <div className="text-xs text-slate-500">Apple MapKit (client)</div>
+            <div
+              className={`text-sm mt-1 ${hasMapKit ? "text-emerald-600" : "text-amber-600"}`}
+            >
+              {hasMapKit
+                ? "OK — NEXT_PUBLIC_MAPKIT_TOKEN found"
+                : "Optional — add NEXT_PUBLIC_MAPKIT_TOKEN to enable"}
+            </div>
+          </div>
+        </div>
+        <p className="text-xs text-slate-500 mt-2">
+          Server-side keys (Routes v2) must be set in <code>.env</code>.
+        </p>
+      </details>
     </div>
   );
 }

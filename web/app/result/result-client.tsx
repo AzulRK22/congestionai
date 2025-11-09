@@ -355,7 +355,7 @@ export default function ResultClient() {
       </SectionCard>
 
       <SectionCard staticCard>
-        <h3 className="font-semibold mb-3">Mapa</h3>
+        <h3 className="font-semibold mb-3">Map</h3>
         {valid ? (
           <MapContainer
             provider={provider}
@@ -366,7 +366,7 @@ export default function ResultClient() {
           />
         ) : (
           <div className="h-72 rounded-2xl border bg-slate-50 grid place-items-center text-sm text-slate-500">
-            Escribe origen y destino para ver la ruta.
+            Type origin and destination to see the route.
           </div>
         )}
       </SectionCard>
@@ -375,15 +375,15 @@ export default function ResultClient() {
         <div className="h-28 rounded-2xl bg-slate-100 animate-pulse" />
       )}
       <div aria-live="polite" className="sr-only">
-        {loading ? "Calculando ruta…" : "Listo"}
+        {loading ? "Calculating route…" : "Ready"}
       </div>
 
       {err && (
         <div className="rounded-md border border-red-200 bg-red-50 text-red-700 p-3 text-sm">
           {err.includes("HTTP 403") &&
-            "403 – revisa tu server key/billing de Google."}
+            "403 – check your Google server key/billing."}
           {err.includes("HTTP 429") &&
-            "429 – rate limit. Baja step/ventana o activa budget-mode."}
+            "429 – rate limit. Lower step/window or enable budget mode."}
           {!err.includes("HTTP") && err}
         </div>
       )}
@@ -413,13 +413,13 @@ export default function ResultClient() {
                       ? Math.round((data.best.savingVsNow || 0) * 100)
                       : undefined,
                 });
-                alert("Guardado en History ✅");
+                alert("Saved to History ✅");
               }}
             />
           </SectionCard>
 
           <SectionCard>
-            <h3 className="font-semibold mb-3">Heatmap próximas 2h</h3>
+            <h3 className="font-semibold mb-3">Heatmap next 2h</h3>
             <Heatmap data={data.heatmap} />
           </SectionCard>
 
