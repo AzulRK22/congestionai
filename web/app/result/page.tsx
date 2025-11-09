@@ -9,19 +9,46 @@ import { ResultCard } from "@/components/ResultCard";
 import { MapContainer } from "@/components/MapContainer";
 import { StickyActions } from "@/components/StickyActions";
 import { saveHistoryItem } from "@/lib/storage";
+import type { AnalyzeResponse, WaypointInput } from "@/types/analyze";
 
-function parseWaypointParam(s: string | null): any {
+/** Convierte query (?origin=..., ?destination=...) a WaypointInput o "" */
+function parseWaypointParam(s: string | null): WaypointInput | "" {
   if (!s) return "";
   const t = s.trim().replace(/^geo:/, "");
   const clean = t.startsWith("@") ? t.slice(1) : t;
-  const re = /^-?\d+(\.\d+)?,\s*-?\d+(\.\d+)?$/;
+  const re = /^-?\d+(?:\.\d+)?,\s*-?\d+(?:\.\d+)?$/;
   if (re.test(clean)) {
     const [latStr, lngStr] = clean.split(",");
-    const lat = parseFloat(latStr);
-    const lng = parseFloat(lngStr);
-    if (!Number.isNaN(lat) && !Number.isNaN(lng)) return { lat, lng };
+    const lat = Number(latStr);
+    const lng = Number(lngStr);
+    if (Number.isFinite(lat) && Number.isFinite(lng)) return { lat, lng };
   }
   return t; // dirección/lugar
+}
+
+/** Type guards sin `any` */
+function isLatLng(o: unknown): o is { lat: number; lng: number } {
+  return (
+    typeof o === "object" &&
+    o !== null &&
+    "lat" in o &&
+    "lng" in o &&
+    typeof (o as { lat: unknown }).lat === "number" &&
+    typeof (o as { lng: unknown }).lng === "number"
+  );
+}
+function hasPlaceId(o: unknown): o is { placeId: string } {
+  return (
+    typeof o === "object" &&
+    o !== null &&
+    "placeId" in o &&
+    typeof (o as { placeId: unknown }).placeId === "string" &&
+    (o as { placeId: string }).placeId.length > 0
+  );
+}
+function isWaypoint(v: WaypointInput | ""): v is WaypointInput {
+  if (typeof v === "string") return v.trim().length > 2;
+  return isLatLng(v) || hasPlaceId(v);
 }
 
 export default function ResultPage() {
@@ -31,34 +58,40 @@ export default function ResultPage() {
   const originQ = sp.get("origin");
   const destinationQ = sp.get("destination");
 
-  const originPayload = useMemo(() => parseWaypointParam(originQ), [originQ]);
-  const destinationPayload = useMemo(
+  const originPayload = useMemo<WaypointInput | "">(
+    () => parseWaypointParam(originQ),
+    [originQ],
+  );
+  const destinationPayload = useMemo<WaypointInput | "">(
     () => parseWaypointParam(destinationQ),
     [destinationQ],
   );
 
   const [provider, setProvider] = useState<"google" | "apple">("google");
-  const [data, setData] = useState<any>(null);
+  const [data, setData] = useState<AnalyzeResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
+  // Provider desde Settings (localStorage)
   useEffect(() => {
     const p =
       (localStorage.getItem("provider") as "google" | "apple") || "google";
     setProvider(p);
   }, []);
 
-  const isOk = (v: any) =>
-    typeof v === "string"
-      ? v.trim().length > 2
-      : v && typeof v.lat === "number" && typeof v.lng === "number";
   const valid = useMemo(
-    () => isOk(originPayload) && isOk(destinationPayload),
+    () => isWaypoint(originPayload) && isWaypoint(destinationPayload),
     [originPayload, destinationPayload],
   );
 
+  // Llama a /api/analyze con cancelación si cambian los params
   useEffect(() => {
-    if (!valid) return;
+    if (!valid) {
+      setData(null);
+      setErr(null);
+      return;
+    }
+    const ctrl = new AbortController();
     (async () => {
       try {
         setErr(null);
@@ -66,28 +99,40 @@ export default function ResultPage() {
         const res = await fetch("/api/analyze", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
+          signal: ctrl.signal,
           body: JSON.stringify({
-            origin: originPayload, // ← puede ser string o {lat,lng}
+            origin: originPayload, // string | {lat,lng} | {placeId}
             destination: destinationPayload,
             windowMins: 120,
             stepMins: 10,
           }),
         });
         if (!res.ok) {
-          const j = await res.json().catch(() => ({}));
-          throw new Error(j?.detail?.text || `HTTP ${res.status}`);
+          let msg = `HTTP ${res.status}`;
+          try {
+            const j = (await res.json()) as {
+              error?: string;
+              detail?: unknown;
+            };
+            if (typeof j?.error === "string") msg = j.error;
+          } catch {
+            /* noop */
+          }
+          throw new Error(msg);
         }
-        const json = await res.json();
+        const json = (await res.json()) as AnalyzeResponse;
         setData(json);
-      } catch (e: any) {
-        setErr(e?.message || "Error");
+      } catch (e) {
+        if ((e as Error).name === "AbortError") return;
+        setErr((e as Error).message || "Error");
       } finally {
         setLoading(false);
       }
     })();
+    return () => ctrl.abort();
   }, [originPayload, destinationPayload, valid]);
 
-  // Helpers acciones 1-clic
+  // Acciones 1-clic
   const handleAddCalendar = () => {
     if (!data?.best) return;
     const start = new Date(data.best.departAtISO);
@@ -117,7 +162,8 @@ export default function ResultPage() {
       hour: "2-digit",
       minute: "2-digit",
     });
-    const msg = `Salgo ${tStr}. ETA ~${data.best.etaMin} min (ahorro ${(data.best.savingVsNow * 100) | 0}%) – CongestionAI`;
+    const pct = Math.round(data.best.savingVsNow * 100);
+    const msg = `Salgo ${tStr}. ETA ~${data.best.etaMin} min (ahorro ${pct}%) – CongestionAI`;
     if (navigator.share)
       navigator
         .share({ text: msg })
@@ -129,6 +175,7 @@ export default function ResultPage() {
     <section className="py-6 space-y-6">
       <h1 className="text-3xl font-semibold tracking-tight">Resultado</h1>
 
+      {/* Form para replanear rápido */}
       <SectionCard>
         <PlannerForm
           initialOrigin={originQ ?? ""}
@@ -141,6 +188,7 @@ export default function ResultPage() {
         />
       </SectionCard>
 
+      {/* Mapa */}
       <SectionCard staticCard>
         <h3 className="font-semibold mb-3">Mapa</h3>
         {valid ? (
@@ -148,7 +196,7 @@ export default function ResultPage() {
             provider={provider}
             origin={originQ ?? ""}
             destination={destinationQ ?? ""}
-            polylineEnc={data?.best?.polyline}
+            polylineEnc={data?.best?.polyline ?? undefined}
             sri={data?.best?.sri}
           />
         ) : (
@@ -158,6 +206,7 @@ export default function ResultPage() {
         )}
       </SectionCard>
 
+      {/* Estados */}
       {loading && (
         <div className="h-28 rounded-2xl bg-slate-100 animate-pulse" />
       )}
@@ -167,6 +216,7 @@ export default function ResultPage() {
         </div>
       )}
 
+      {/* Resultado + heatmap + acciones */}
       {data && !loading && !err && (
         <>
           <SectionCard>

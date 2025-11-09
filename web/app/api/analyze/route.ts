@@ -1,3 +1,4 @@
+// web/app/api/analyze/route.ts
 import { NextRequest, NextResponse } from "next/server";
 
 /** Runtime Node (por uso de fetch server-side) */
@@ -12,6 +13,61 @@ const FM = [
   "routes.polyline.encodedPolyline",
   "routes.travelAdvisory.speedReadingIntervals",
 ].join(",");
+
+/* ==================== Tipos mínimos ==================== */
+export type SpeedReadingInterval = {
+  startPolylinePointIndex: number;
+  endPolylinePointIndex: number;
+  speed: "SLOW" | "NORMAL" | "FAST" | "UNKNOWN_SPEED";
+};
+
+type ComputeRoutesResponse = {
+  routes?: Array<{
+    duration?: string;
+    staticDuration?: string;
+    polyline?: { encodedPolyline?: string };
+    travelAdvisory?: { speedReadingIntervals?: SpeedReadingInterval[] };
+  }>;
+};
+
+type WaypointInput =
+  | string
+  | { placeId: string }
+  | { lat: number; lng: number };
+
+type AnalyzeBody = {
+  origin: WaypointInput;
+  destination: WaypointInput;
+  windowMins?: number;
+  stepMins?: number;
+  offset?: number;
+};
+
+type RouteSample = {
+  m: number;
+  departAtISO: string;
+  etaMin: number;
+  risk: number;
+  contribs: { name: string; delta: number }[];
+  polyline: string | null;
+  sri: SpeedReadingInterval[];
+};
+
+type AnalyzeResponse = {
+  best: {
+    departAtISO: string;
+    etaMin: number;
+    savingVsNow: number;
+    risk: number;
+    explain: string[];
+    polyline?: string | null;
+    sri?: SpeedReadingInterval[];
+  };
+  alternatives: RouteSample[];
+  heatmap: { hourOfWeek: number; risk: number }[];
+  notes: string[];
+};
+/* ======================================================= */
 
 /** -------- IA ligera: features + scorer logístico explicable ---------- */
 type Features = {
@@ -41,8 +97,8 @@ function buildFeatures(args: {
   holiday?: boolean;
 }): Features {
   const d = new Date(args.departISO);
-  const dow = d.getDay(),
-    h = d.getHours();
+  const dow = d.getDay();
+  const h = d.getHours();
   return {
     hourOfWeek: dow * 24 + h,
     isPeak: (h >= 7 && h <= 9) || (h >= 17 && h <= 19) ? 1 : 0,
@@ -78,14 +134,42 @@ function predictRisk(f: Features) {
 }
 /** --------------------------------------------------------------------- */
 
-/** Soporta string | {lat,lng} | {placeId} */
-function toWaypoint(v: any) {
+/** Soporta string | {lat,lng} | {placeId} y reconoce strings @lat,lng */
+const coordRe = /^@?\s*(-?\d+(?:\.\d+)?)[,\s]+(-?\d+(?:\.\d+)?)(?:\s*)$/i;
+function parseLatLngString(str: string): { lat: number; lng: number } | null {
+  const m = coordRe.exec(str.trim());
+  if (!m) return null;
+  const lat = Number(m[1]);
+  const lng = Number(m[2]);
+  if (Number.isFinite(lat) && Number.isFinite(lng)) return { lat, lng };
+  return null;
+}
+
+function toWaypoint(v: WaypointInput) {
   if (!v) return { address: "" };
-  if (typeof v === "string") return { address: v };
-  if (v.placeId) return { placeId: v.placeId };
-  if (typeof v.lat === "number" && typeof v.lng === "number") {
-    return { location: { latLng: { latitude: v.lat, longitude: v.lng } } };
+
+  // object inputs
+  if (typeof v === "object") {
+    if ("placeId" in v) return { placeId: v.placeId };
+    if ("lat" in v && "lng" in v) {
+      return { location: { latLng: { latitude: v.lat, longitude: v.lng } } };
+    }
   }
+
+  // string inputs
+  if (typeof v === "string") {
+    const coords = parseLatLngString(v);
+    if (coords) {
+      return {
+        location: {
+          latLng: { latitude: coords.lat, longitude: coords.lng },
+        },
+      };
+    }
+    return { address: v };
+  }
+
+  // fallback
   return { address: String(v) };
 }
 
@@ -96,7 +180,7 @@ export async function POST(req: NextRequest) {
     windowMins = 120,
     stepMins = 10,
     offset = 0,
-  } = await req.json();
+  } = (await req.json()) as AnalyzeBody;
 
   if (!origin || !destination) {
     return NextResponse.json({ error: "missing params" }, { status: 400 });
@@ -112,7 +196,7 @@ export async function POST(req: NextRequest) {
   }
 
   const startTs = Date.now() + offset * 60_000;
-  const samples: any[] = [];
+  const samples: RouteSample[] = [];
 
   for (let m = 0; m <= windowMins; m += stepMins) {
     const departAtISO = new Date(startTs + m * 60_000).toISOString();
@@ -142,7 +226,7 @@ export async function POST(req: NextRequest) {
       continue;
     }
 
-    const json = await res.json();
+    const json = (await res.json()) as ComputeRoutesResponse;
     const r = json.routes?.[0];
     if (!r) continue;
 
@@ -167,8 +251,8 @@ export async function POST(req: NextRequest) {
       etaMin,
       risk: ai.risk,
       contribs: ai.contribs,
-      polyline: r.polyline?.encodedPolyline || null,
-      sri: r.travelAdvisory?.speedReadingIntervals || [],
+      polyline: r.polyline?.encodedPolyline ?? null,
+      sri: r.travelAdvisory?.speedReadingIntervals ?? [],
     });
   }
 
@@ -177,7 +261,7 @@ export async function POST(req: NextRequest) {
   }
 
   const alpha = 0.7;
-  const J = (s: any) => alpha * s.etaMin + (1 - alpha) * (s.risk * 100);
+  const J = (s: RouteSample) => alpha * s.etaMin + (1 - alpha) * (s.risk * 100);
   const best = samples.reduce((a, b) => (J(b) < J(a) ? b : a));
 
   const nowEta = samples[0]?.etaMin ?? best.etaMin;
@@ -189,13 +273,13 @@ export async function POST(req: NextRequest) {
     risk: s.etaMin / Math.max(1, maxEta),
   }));
 
-  return NextResponse.json({
+  const payload: AnalyzeResponse = {
     best: {
       departAtISO: best.departAtISO,
       etaMin: best.etaMin,
       savingVsNow,
       risk: best.risk,
-      explain: best.contribs.map((c: any) => `${c.name} +${c.delta}%`),
+      explain: best.contribs.map((c) => `${c.name} +${c.delta}%`),
       polyline: best.polyline,
       sri: best.sri,
     },
@@ -207,7 +291,9 @@ export async function POST(req: NextRequest) {
       `alpha=${alpha}`,
       `window=${windowMins}m step=${stepMins}m offset=${offset}m`,
     ],
-  });
+  };
+
+  return NextResponse.json(payload);
 }
 
 function toSec(str: string) {

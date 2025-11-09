@@ -13,8 +13,8 @@ export type SpeedReadingInterval = {
 
 type Props = {
   provider: Provider;
-  origin: string;
-  destination: string;
+  origin: string; // público (no usado para dibujar)
+  destination: string; // público (no usado para dibujar)
   polylineEnc?: string;
   sri?: SpeedReadingInterval[];
 };
@@ -62,33 +62,32 @@ export function MapContainer({ provider, polylineEnc, sri }: Props) {
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
-    let dispose: (() => void) | undefined;
 
     const path = polylineEnc ? decodePolyline(polylineEnc) : [];
     const hasPath = path.length > 0;
     const center = hasPath
       ? path[Math.floor(path.length / 2)]
-      : { lat: 19.432608, lng: -99.133209 };
+      : { lat: 19.432608, lng: -99.133209 }; // CDMX
+
+    let dispose: (() => void) | undefined;
 
     (async () => {
       if (provider === "google") {
-        const libs = await ensureGoogleMaps(["core", "maps"]); // dual loader
-        const g = (window as any).google?.maps;
-
-        const MapCtor = libs.maps?.Map ?? g?.Map;
-        const PolylineCtor = libs.maps?.Polyline ?? g?.Polyline;
-        const BoundsCtor = libs.core?.LatLngBounds ?? g?.LatLngBounds;
-
-        if (!MapCtor || !PolylineCtor) {
-          console.error("[Map] Constructores de Google Maps no disponibles");
+        // Garantiza el script; usa los tipos globales de @types/google.maps
+        await ensureGoogleMaps(["core", "maps"]);
+        const gmaps = (globalThis as { google?: typeof google }).google?.maps;
+        if (!gmaps) {
+          console.error("[Map] Google Maps no disponible");
           return;
         }
 
-        const map = new MapCtor(el, {
+        const map = new gmaps.Map(el, {
           center,
           zoom: hasPath ? 12 : 11,
           disableDefaultUI: true,
         });
+
+        const lines: google.maps.Polyline[] = [];
 
         if (hasPath) {
           if (sri?.length) {
@@ -97,48 +96,46 @@ export function MapContainer({ provider, polylineEnc, sri }: Props) {
               const end = Math.min(path.length - 1, seg.endPolylinePointIndex);
               if (end <= start) return;
               const segPath = path.slice(start, end + 1);
-              new PolylineCtor({
+              const line = new gmaps.Polyline({
                 path: segPath,
-                strokeColor:
-                  {
-                    FAST: "#16a34a",
-                    NORMAL: "#f59e0b",
-                    SLOW: "#dc2626",
-                    UNKNOWN_SPEED: "#64748b",
-                  }[seg.speed] ?? "#2563eb",
+                strokeColor: SPEED_COLOR[seg.speed] ?? "#2563eb",
                 strokeOpacity: 0.9,
                 strokeWeight: 5,
                 map,
               });
+              lines.push(line);
             });
           } else {
-            new PolylineCtor({
+            const line = new gmaps.Polyline({
               path,
               strokeColor: "#2563eb",
               strokeOpacity: 0.9,
               strokeWeight: 5,
               map,
             });
+            lines.push(line);
           }
 
-          if (BoundsCtor) {
-            const bounds = new BoundsCtor();
+          try {
+            const bounds = new gmaps.LatLngBounds();
             path.forEach((p) => bounds.extend(p));
-            // algunos Bounds no tienen isEmpty; usamos try/catch
-            try {
-              map.fitBounds(bounds, 40);
-            } catch {}
+            map.fitBounds(bounds, 40); // padding numérico, sin any
+          } catch {
+            /* padding no soportado en algunas integraciones: ok */
           }
         }
 
         dispose = () => {
-          /* GC al desmontar */
+          lines.forEach((l) => l.setMap(null));
         };
       } else {
+        // Apple MapKit
         const token = process.env.NEXT_PUBLIC_MAPKIT_TOKEN as string;
         if (!token) return;
+
         await loadMapKit(token);
-        const mk = (window as any).mapkit;
+        const mk = (globalThis as unknown as { mapkit: typeof mapkit }).mapkit;
+
         const map = new mk.Map(el);
         map.showsZoomControl = false;
         map.showsMapTypeControl = false;
@@ -147,6 +144,8 @@ export function MapContainer({ provider, polylineEnc, sri }: Props) {
           new mk.Coordinate(center.lat, center.lng),
           new mk.CoordinateSpan(0.2, 0.2),
         );
+
+        const overlays: mapkit.PolylineOverlay[] = [];
 
         if (hasPath) {
           const coords = path.map((p) => new mk.Coordinate(p.lat, p.lng));
@@ -166,26 +165,28 @@ export function MapContainer({ provider, polylineEnc, sri }: Props) {
                 }),
               });
               map.addOverlay(overlay);
+              overlays.push(overlay);
             });
           } else {
             const overlay = new mk.PolylineOverlay(coords, {
               style: new mk.Style({ lineWidth: 5, strokeColor: "#2563eb" }),
             });
             map.addOverlay(overlay);
+            overlays.push(overlay);
           }
         }
 
         dispose = () => {
           try {
-            map.removeOverlays(map.overlays);
-          } catch {}
+            overlays.forEach((o) => map.removeOverlay(o));
+          } catch {
+            /* noop */
+          }
         };
       }
     })();
 
-    return () => {
-      dispose?.();
-    };
+    return () => dispose?.();
   }, [provider, polylineEnc, sri]);
 
   return (

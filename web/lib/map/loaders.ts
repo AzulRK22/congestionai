@@ -1,10 +1,34 @@
 // web/lib/map/loaders.ts
 // Loader dual: usa importLibrary si existe; si no, cae a constructores globales.
-// También expone ensureGooglePlaces.
+// Tipado sin `any` usando unknown + tipos mínimos.
 
 let scriptPromise: Promise<void> | null = null;
 type GLib = "core" | "maps" | "places" | "routes";
-const libCache: Partial<Record<GLib, any>> = {};
+
+type CoreLib = {
+  LatLngBounds: new () => {
+    extend: (pt: { lat: number; lng: number }) => void;
+    isEmpty: () => boolean;
+  };
+};
+
+type MapsLib = {
+  Map: new (el: HTMLElement, opts?: unknown) => unknown;
+  Polyline: new (opts: unknown) => unknown;
+  Marker: new (opts: unknown) => unknown;
+};
+
+type PlacesLib = Record<string, unknown>;
+type RoutesLib = Record<string, unknown>;
+
+type LibShape = Partial<{
+  core: CoreLib;
+  maps: MapsLib;
+  places: PlacesLib;
+  routes: RoutesLib;
+}>;
+
+const libCache: Partial<Record<GLib, unknown>> = {};
 
 function injectGoogleScript() {
   if (scriptPromise) return scriptPromise;
@@ -15,10 +39,9 @@ function injectGoogleScript() {
   const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY!;
   if (!apiKey) throw new Error("Falta NEXT_PUBLIC_GOOGLE_MAPS_API_KEY");
 
-  // Cargamos con libraries=... para compatibilidad con modo clásico
   scriptPromise = new Promise((resolve, reject) => {
-    // si ya hay script cargado, resolvemos
-    if ((window as any).google?.maps) {
+    const g = (window as unknown as { google?: { maps?: unknown } }).google;
+    if (g?.maps) {
       resolve();
       return;
     }
@@ -28,8 +51,6 @@ function injectGoogleScript() {
       v: "weekly",
       libraries: "maps,places,routes",
       loading: "async",
-      language: "es",
-      region: "MX",
     });
     s.src = `https://maps.googleapis.com/maps/api/js?${qs.toString()}`;
     s.async = true;
@@ -41,60 +62,92 @@ function injectGoogleScript() {
   return scriptPromise;
 }
 
-export async function ensureGoogleMaps(libs: GLib[] = ["core", "maps"]) {
+export async function ensureGoogleMaps(
+  libs: GLib[] = ["core", "maps"],
+): Promise<LibShape> {
   await injectGoogleScript();
-  const g = (window as any).google?.maps;
+  const g = (
+    window as unknown as {
+      google?: { maps?: { importLibrary?: (n: string) => Promise<unknown> } };
+    }
+  ).google?.maps;
   if (!g) throw new Error("Google Maps no está disponible");
+
+  const out: LibShape = {};
 
   // Si existe importLibrary, úsalo con caché
   if (typeof g.importLibrary === "function") {
-    const out: any = {};
     for (const L of libs) {
       if (!libCache[L]) {
         libCache[L] = await g.importLibrary(L);
       }
-      out[L] = libCache[L];
+      const v = libCache[L];
+      if (L === "core") out.core = v as CoreLib;
+      else if (L === "maps") out.maps = v as MapsLib;
+      else if (L === "places") out.places = v as PlacesLib;
+      else if (L === "routes") out.routes = v as RoutesLib;
     }
-    return out as Record<GLib, any>;
+    return out;
   }
 
-  // Fallback: regresamos wrappers con constructores globales
-  const out: any = {};
-  if (libs.includes("maps")) {
+  // Fallback clásico: tomar constructores globales
+  const gg = (
+    window as unknown as {
+      google?: {
+        maps?: {
+          Map: MapsLib["Map"];
+          Polyline: MapsLib["Polyline"];
+          Marker: MapsLib["Marker"];
+          LatLngBounds: CoreLib["LatLngBounds"];
+          places?: PlacesLib;
+        };
+      };
+    }
+  ).google?.maps;
+
+  if (libs.includes("maps") && gg?.Map && gg.Polyline && gg.Marker) {
     out.maps = {
-      Map: g.Map,
-      Polyline: g.Polyline,
-      Marker: g.Marker,
+      Map: gg.Map,
+      Polyline: gg.Polyline,
+      Marker: gg.Marker,
     };
   }
-  if (libs.includes("core")) {
+  if (libs.includes("core") && gg?.LatLngBounds) {
     out.core = {
-      LatLngBounds: g.LatLngBounds,
+      LatLngBounds: gg.LatLngBounds,
     };
   }
-  if (libs.includes("places")) {
-    out.places = (g as any).places ?? {};
+  if (libs.includes("places") && gg?.places) {
+    out.places = gg.places;
   }
   if (libs.includes("routes")) {
-    out.routes = {}; // usamos REST para rutas; aquí no necesitas nada
+    out.routes = {};
   }
-  return out as Record<GLib, any>;
+  return out;
 }
 
-export async function ensureGooglePlaces() {
+export async function ensureGooglePlaces(): Promise<PlacesLib> {
   await injectGoogleScript();
-  const g = (window as any).google?.maps;
-  if (!g?.places) throw new Error("Google Places no disponible");
-  return g.places;
+  const places = (
+    window as unknown as {
+      google?: { maps?: { places?: PlacesLib } };
+    }
+  ).google?.maps?.places;
+  if (!places) throw new Error("Google Places no disponible");
+  return places;
 }
 
 /** -----------------------
  * Apple MapKit (idempotente)
  * --------------------- */
 let aPromise: Promise<void> | null = null;
+
 export function loadMapKit(token: string) {
   if (typeof window === "undefined") return Promise.resolve();
-  const w = window as any;
+  const w = window as unknown as {
+    mapkit?: unknown;
+    __MAPKIT_INITED__?: boolean;
+  };
   if (w.mapkit && w.__MAPKIT_INITED__) return Promise.resolve();
   if (aPromise) return aPromise;
   if (!token)
@@ -104,7 +157,13 @@ export function loadMapKit(token: string) {
     const onReady = () => {
       try {
         if (!w.__MAPKIT_INITED__) {
-          w.mapkit.init({
+          const mk = w.mapkit as {
+            init: (opts: {
+              authorizationCallback: (cb: (t: string) => void) => void;
+              language?: string;
+            }) => void;
+          };
+          mk.init({
             authorizationCallback: (done: (t: string) => void) => done(token),
             language: "es",
           });
@@ -115,6 +174,7 @@ export function loadMapKit(token: string) {
         reject(e);
       }
     };
+
     if (!document.getElementById("apple-mapkit")) {
       const s = document.createElement("script");
       s.id = "apple-mapkit";
@@ -128,5 +188,6 @@ export function loadMapKit(token: string) {
       onReady();
     }
   });
+
   return aPromise;
 }

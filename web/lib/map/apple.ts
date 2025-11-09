@@ -1,67 +1,124 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
-import type { MapProvider, LatLng } from "./types";
-import { loadMapKit } from "./loaders";
+// web/lib/map/apple.ts
+import { loadMapKit } from "@/lib/map/loaders";
 
-function spanFromZoom(zoom: number) {
-  // Heurístico simple para "acercamiento ciudad"
-  const clamp = (x: number, min: number, max: number) =>
-    Math.max(min, Math.min(max, x));
-  const z = clamp(zoom, 3, 18);
-  const latDelta = clamp(4 / Math.pow(2, z - 5), 0.01, 1.5);
-  const mk = (window as any).mapkit;
-  return new mk.CoordinateSpan(latDelta, latDelta);
+export type AppleSpeedReadingInterval = {
+  startPolylinePointIndex: number;
+  endPolylinePointIndex: number;
+  speed: "SLOW" | "NORMAL" | "FAST" | "UNKNOWN_SPEED";
+};
+
+const SPEED_COLOR: Record<AppleSpeedReadingInterval["speed"], string> = {
+  FAST: "#16a34a",
+  NORMAL: "#f59e0b",
+  SLOW: "#dc2626",
+  UNKNOWN_SPEED: "#64748b",
+};
+
+export function decodePolyline(
+  encoded: string,
+): Array<{ lat: number; lng: number }> {
+  const coords: Array<{ lat: number; lng: number }> = [];
+  let index = 0,
+    lat = 0,
+    lng = 0;
+  while (index < encoded.length) {
+    let b: number,
+      shift = 0,
+      result = 0;
+    do {
+      b = encoded.charCodeAt(index++) - 63;
+      result |= (b & 0x1f) << shift;
+      shift += 5;
+    } while (b >= 0x20);
+    const dlat = result & 1 ? ~(result >> 1) : result >> 1;
+    lat += dlat;
+
+    shift = 0;
+    result = 0;
+    do {
+      b = encoded.charCodeAt(index++) - 63;
+      result |= (b & 0x1f) << shift;
+      shift += 5;
+    } while (b >= 0x20);
+    const dlng = result & 1 ? ~(result >> 1) : result >> 1;
+    lng += dlng;
+
+    coords.push({ lat: lat / 1e5, lng: lng / 1e5 });
+  }
+  return coords;
 }
 
-export class AppleMapProvider implements MapProvider {
-  private map!: any;
-  private routeOverlay?: any;
-  private directions?: any;
+export async function drawAppleRoute(opts: {
+  el: HTMLDivElement;
+  polyline?: string;
+  sri?: AppleSpeedReadingInterval[];
+}) {
+  const { el, polyline, sri } = opts;
+  const token = process.env.NEXT_PUBLIC_MAPKIT_TOKEN!;
+  await loadMapKit(token);
 
-  async mount(el: HTMLElement, center: LatLng, zoom: number) {
-    const token = process.env.NEXT_PUBLIC_MAPKIT_TOKEN || "";
-    await loadMapKit(token);
-    const mk = (window as any).mapkit;
+  // Tipado mínimo sin `any`
+  const mkGlobal = (window as unknown as { mapkit?: unknown }).mapkit;
+  if (!mkGlobal) throw new Error("MapKit no disponible");
 
-    const centerCoord = new mk.Coordinate(center.lat, center.lng);
+  const mk = mkGlobal as {
+    Map: new (el: HTMLElement) => {
+      showsZoomControl: boolean;
+      showsMapTypeControl: boolean;
+      language: string;
+      region: unknown;
+      addOverlay: (ov: unknown) => void;
+      removeOverlays?: (ov: unknown[]) => void;
+      overlays?: unknown[];
+    };
+    Coordinate: new (lat: number, lng: number) => unknown;
+    CoordinateRegion: new (center: unknown, span: unknown) => unknown;
+    CoordinateSpan: new (latDelta: number, lngDelta: number) => unknown;
+    PolylineOverlay: new (
+      coords: unknown[],
+      options: { style: unknown },
+    ) => unknown;
+    Style: new (opts: { lineWidth?: number; strokeColor?: string }) => unknown;
+  };
 
-    // ⚠️ Sin zoomLevel: usa region (center + span)
-    this.map = new mk.Map(el, {
-      showsUserLocation: false,
-      center: centerCoord,
-    });
+  const map = new mk.Map(el);
+  map.showsZoomControl = false;
+  map.showsMapTypeControl = false;
+  map.language = "es";
 
-    const span = spanFromZoom(zoom);
-    this.map.region = new mk.CoordinateRegion(centerCoord, span);
+  const path = polyline ? decodePolyline(polyline) : [];
+  const hasPath = path.length > 0;
 
-    this.directions = new mk.Directions();
-  }
+  const center = hasPath
+    ? path[Math.floor(path.length / 2)]
+    : { lat: 19.432608, lng: -99.133209 };
 
-  async setRoute(origin: string, destination: string) {
-    const mk = (window as any).mapkit;
-    this.directions.route({ origin, destination }, (_err: any, data: any) => {
-      const route = data?.routes?.[0];
-      if (!route) return;
+  map.region = new mk.CoordinateRegion(
+    new mk.Coordinate(center.lat, center.lng),
+    new mk.CoordinateSpan(0.2, 0.2),
+  );
 
-      if (this.routeOverlay) this.map.removeOverlay(this.routeOverlay);
-      this.routeOverlay = new mk.PolylineOverlay(route.path, {
-        style: { lineWidth: 4, strokeColor: "#111" },
+  if (!hasPath) return;
+
+  const coords = path.map((p) => new mk.Coordinate(p.lat, p.lng));
+  if (sri && sri.length > 0) {
+    sri.forEach((seg) => {
+      const start = Math.max(0, seg.startPolylinePointIndex);
+      const end = Math.min(coords.length - 1, seg.endPolylinePointIndex);
+      if (end <= start) return;
+      const segCoords = coords.slice(start, end + 1);
+      const overlay = new mk.PolylineOverlay(segCoords, {
+        style: new mk.Style({
+          lineWidth: 5,
+          strokeColor: SPEED_COLOR[seg.speed] ?? "#2563eb",
+        }),
       });
-      this.map.addOverlay(this.routeOverlay);
-
-      // Padding como objeto (más compatible que new mk.Padding)
-      this.map.showItems([this.routeOverlay], {
-        padding: { top: 48, right: 48, bottom: 48, left: 48 },
-      });
+      map.addOverlay(overlay);
     });
-  }
-
-  setMarkers(_points: LatLng[]) {
-    /* opcional */
-  }
-  fitBounds(_sw: LatLng, _ne: LatLng) {
-    /* opcional */
-  }
-  destroy() {
-    /* noop */
+  } else {
+    const overlay = new mk.PolylineOverlay(coords, {
+      style: new mk.Style({ lineWidth: 5, strokeColor: "#2563eb" }),
+    });
+    map.addOverlay(overlay);
   }
 }

@@ -1,25 +1,48 @@
 "use client";
-import { useEffect, useState } from "react";
+
+import { useState } from "react";
 import { SectionCard } from "@/components/ui/SectionCard";
 import { Button } from "@/components/ui/Button";
 
-export default function SettingsPage() {
-  const [provider, setProvider] = useState<"google" | "apple">("google");
-  const [city, setCity] = useState("CDMX");
-  const [units, setUnits] = useState<"metric" | "imperial">("metric");
+type Provider = "google" | "apple";
+type Units = "metric" | "imperial";
 
-  useEffect(() => {
-    const p = localStorage.getItem("provider") as "google" | "apple" | null;
-    if (p) setProvider(p);
-    const c = localStorage.getItem("city");
-    if (c) setCity(c);
-    const u = localStorage.getItem("units") as "metric" | "imperial" | null;
-    if (u) setUnits(u);
-  }, []);
+function getInitialProvider(): Provider {
+  if (typeof window === "undefined") return "google";
+  const p = localStorage.getItem("provider");
+  return p === "google" || p === "apple" ? p : "google";
+}
+
+function getInitialUnits(): Units {
+  if (typeof window === "undefined") return "metric";
+  const u = localStorage.getItem("units");
+  return u === "metric" || u === "imperial" ? u : "metric";
+}
+
+function getInitialCity(): string {
+  if (typeof window === "undefined") return "CDMX";
+  return localStorage.getItem("city") || "CDMX";
+}
+
+export default function SettingsPage() {
+  // Inicializa desde localStorage de forma segura
+  const [provider, setProvider] = useState<Provider>(getInitialProvider);
+  const [city, setCity] = useState<string>(getInitialCity);
+  const [units, setUnits] = useState<Units>(getInitialUnits);
+
+  function handleProviderChange(e: React.ChangeEvent<HTMLSelectElement>) {
+    const val = e.target.value;
+    if (val === "google" || val === "apple") setProvider(val);
+  }
+
+  function handleUnitsChange(e: React.ChangeEvent<HTMLSelectElement>) {
+    const val = e.target.value;
+    if (val === "metric" || val === "imperial") setUnits(val);
+  }
 
   function save() {
     localStorage.setItem("provider", provider);
-    localStorage.setItem("city", city);
+    localStorage.setItem("city", city.trim() || "CDMX");
     localStorage.setItem("units", units);
     alert("Settings guardados ✅");
   }
@@ -31,11 +54,14 @@ export default function SettingsPage() {
       <SectionCard>
         <div className="grid gap-3">
           <div>
-            <label className="text-sm block mb-1">Mapa por defecto</label>
+            <label htmlFor="provider" className="text-sm block mb-1">
+              Mapa por defecto
+            </label>
             <select
+              id="provider"
               className="input"
               value={provider}
-              onChange={(e) => setProvider(e.target.value as any)}
+              onChange={handleProviderChange}
             >
               <option value="google">Google Maps</option>
               <option value="apple">Apple MapKit</option>
@@ -43,28 +69,38 @@ export default function SettingsPage() {
           </div>
 
           <div>
-            <label className="text-sm block mb-1">Ciudad</label>
+            <label htmlFor="city" className="text-sm block mb-1">
+              Ciudad
+            </label>
             <input
+              id="city"
               className="input"
               value={city}
               onChange={(e) => setCity(e.target.value)}
+              placeholder="CDMX"
+              autoComplete="address-level2"
             />
           </div>
 
           <div>
-            <label className="text-sm block mb-1">Unidades</label>
+            <label htmlFor="units" className="text-sm block mb-1">
+              Unidades
+            </label>
             <select
+              id="units"
               className="input"
               value={units}
-              onChange={(e) => setUnits(e.target.value as any)}
+              onChange={handleUnitsChange}
             >
               <option value="metric">Métrico</option>
               <option value="imperial">Imperial</option>
             </select>
           </div>
 
-          <div>
-            <Button onClick={save}>Guardar</Button>
+          <div className="pt-1">
+            <Button type="button" onClick={save}>
+              Guardar
+            </Button>
           </div>
         </div>
       </SectionCard>
