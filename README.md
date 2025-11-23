@@ -1,38 +1,43 @@
-# CongestionAI
+# CongestionAI — AI-Powered Departure Advisor & 72h Congestion Forecast
 
-AI-powered **departure advisor** and **72h congestion forecast**.
-Pick origin/destination, get the **best time to leave**, with **ETA**, **risk**, and **savings** (time, fuel, CO₂). Save results to History and tweak defaults in Settings.
+CongestionAI is an AI-assisted mobility planner that helps users decide **when to leave**, using traffic-aware sampling, short-term forecasting, and a clean Next.js interface.  
+Select origin/destination, configure your window, and get the **best departure**, predicted ETA, risk levels, and savings (time, fuel, CO₂).  
+Built for **Hack-Nation 2025 (Venture Track)** to demonstrate proactive, data-driven mobility decisions.
 
-> Built for Hack-Nation (Venture Track). Goal: proactive, data-driven mobility decisions.
+## 🔍 What the MVP Includes
 
----
+### Plan
+- Origin/Destination (address, @lat,lng, or placeId)
+- Window, Step, Budget mode
+- Avoid tolls/highways
 
-## Demo features (MVP)
+### Result
+- Best departure (ETA + risk)
+- Advisor chart (ETA line + risk heatmap)
+- Chips: Weekend / Holiday context
+- Add to calendar (.ics), Share, Save
 
-- **Plan**
-  - Origin/Destination (supports address, `@lat,lng`, or placeId).
-  - Tunables: window, step, budget mode, avoid tolls/highways.
-- **Result**
-  - **Best departure** (ETA + risk).
-  - **Departure Advisor chart** (new): ETA line over your window, background tinted by **risk** (green→red). Chips for **Weekend/Holiday** context.
-  - 1-click **Add to calendar** (.ics) & **Share**.
-  - **Save to History** with baseline / savings.
-- **History**
-  - Compact list + search & range filter.
-  - Metrics: **Time saved**, **Fuel saved**, **CO₂ / Money** (uses Settings).
-  - Pin/Unpin, Replan, Open, Delete, Import/Export JSON.
-- **Settings**
-  - Map provider, Units, **Country** (holiday-aware risk), City, Locale.
-  - Savings model defaults: fuel price, consumption (with quick profiles), typical trip distance.
-  - Planner defaults (window, step, budget, avoid tolls/highways).
-  - Import/Export/Reset.
-- **API**
-  - `/api/analyze` — traffic-aware window sampling (Google Routes v2).
-  - `/api/forecast` — **72h horizon** (hourly) + **top-3 windows** (lightweight).
+### History
+- List + search + range filter
+- Time/Fuel/CO₂/Money savings
+- Pin, Replan, Open, Delete
+- Import/Export JSON
 
----
+### Settings
+- Map provider, Units, Country, Locale
+- Savings model: fuel price, L/100km, trip distance
+- Planner defaults (window, step, avoid tolls/highways)
+- Import/Export/Reset
 
-## Screenshots
+## 🧠 Why It Matters
+Congestion drives massive economic and environmental costs.  
+Predictive departure planning helps fleets, cities, and drivers take informed, efficient, and sustainable actions.
+
+## 🗺 API Endpoints
+- **/api/analyze** — traffic-aware window sampling (Google Routes v2)
+- **/api/forecast** — 72h forecast + top-3 windows
+
+## 🖼 Screenshots
 
 <p align="center">
   <img src="web/public/media/plan.jpg" alt="Plan screen" width="420" />
@@ -71,13 +76,12 @@ Congestion costs billions in time and fuel. Forecasting and advising **before** 
 - Local/session storage for cache, settings, history.
 
 ---
+## 🛠 Getting Started
 
-## Getting started
-
-````bash
-pnpm install
+pnpm install  
 pnpm dev
 
+### .env
 Create .env:
     # Client (optional but recommended for map components)
     NEXT_PUBLIC_GOOGLE_MAPS_API_KEY=...
@@ -85,14 +89,12 @@ Create .env:
     # Apple MapKit (optional)
     # NEXT_PUBLIC_MAPKIT_TOKEN=...
 
-    # Server (required for /api/analyze and /api/forecast)
-    GOOGLE_MAPS_API_KEY_SERVER=...
+    # Server (required for /api/ana
 
-## Scripts
-- `pnpm dev` — modo desarrollo
-- `pnpm build` — compila producción
-- `pnpm start` — arranca servidor
-
+## Scripts## Scripts
+- `pnpm dev` — dev
+- `pnpm build` — prod
+- `pnpm start` — server
 
 ## Configuration
 All defaults live in Settings (persisted in localStorage):
@@ -123,5 +125,4 @@ All defaults live in Settings (persisted in localStorage):
   PRs welcome. Standards: Strict TypeScript, ESLint, Tailwind.
 
 ## License
-    MIT
-````
+
