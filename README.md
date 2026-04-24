@@ -1,64 +1,113 @@
-# CongestionAI — AI-Powered Departure Advisor & 72h Congestion Forecast
+# CongestionAI
 
-CongestionAI is an AI-assisted mobility planner that helps users decide when to leave, using traffic-aware sampling, short-term forecasting, and a clean Next.js interface.
-Select origin and destination, configure your window, and get the best departure, predicted ETA, risk levels, and savings in time, fuel, and CO2.
-Built for Hack-Nation 2025 (Venture Track) to demonstrate proactive, data-driven mobility decisions.
+CongestionAI is a web app for smarter car departure planning. Instead of showing only a route, it compares departure windows, estimates traffic-aware ETA, calculates congestion risk, and helps users decide whether they should leave now or wait a bit.
 
-## What the MVP Includes
+It was built as a mobility MVP with a strong product focus: clear recommendations, useful visual feedback, and actionable metrics such as time, fuel, money, and CO2 savings.
 
-### Plan
+## What it does
 
-- Origin and destination with address, `@lat,lng`, or `placeId`
-- Window, step, and budget mode
-- Avoid tolls and avoid highways
+- Compares multiple departure times for the same trip.
+- Recommends the best departure window based on ETA and congestion risk.
+- Shows a forecast of up to 72 hours to detect calmer travel windows.
+- Supports origin and destination as text, coordinates (`@lat,lng`), or `placeId`.
+- Lets users avoid tolls and highways.
+- Adds weekend and holiday context by country.
+- Stores trip history and allows replanning.
+- Imports and exports settings and history as JSON.
+- Includes quick actions such as sharing and adding to calendar.
+
+## Product features
+
+### Planning
+
+- Trip form with origin, destination, analysis window, and step size.
+- Place autocomplete powered by Google Places.
+- Route preferences to avoid tolls or highways.
+- Persistent user defaults.
 
 ### Result
 
-- Best departure with ETA and risk
-- Advisor chart with ETA line and risk heatmap
-- Weekend and holiday context chips
-- Add to calendar, share, and save
+- Primary departure recommendation.
+- Estimated ETA for the best option.
+- Risk level with a short explanation of the main factors.
+- Comparison against “leave now”.
+- Route map, heatmap, and nearby alternatives.
+- Savings metrics for time, fuel, money, and CO2.
+
+### Forecast
+
+- Departure window explorer for the next 72 hours.
+- Top recommended time slots from the forecast.
+- Visual heatmap to identify route-pressure patterns.
+- Context signals for weekends and holidays.
+
+### History and Settings
+
+- Local trip history with search, filters, and replanning.
+- Country, units, locale, and map provider settings.
+- Configurable savings model with fuel price, consumption, and trip distance.
+- Settings and history import/export.
+
+## App tabs
+
+### Home
+
+The Home tab is the main entry point for planning a trip. Users enter origin and destination, define the analysis window and interval, and choose route preferences such as avoiding tolls or highways. From here, the app sends the trip setup into the result flow.
+
+### Result
+
+The Result tab evaluates the selected trip and compares different departure options inside the chosen time window. It highlights the best departure time, estimated ETA, congestion risk, explanation factors, route visualization, and savings versus leaving immediately.
+
+### Forecast
+
+The Forecast tab is designed for flexible trips. It samples future departure windows across the next 72 hours, highlights the best time slots, and visualizes route pressure through a heatmap so users can spot calmer periods before committing to a trip.
 
 ### History
 
-- List, search, and range filter
-- Time, fuel, CO2, and money savings
-- Pin, replan, open, delete, import, and export JSON
+The History tab stores previously analyzed trips locally in the browser. Users can search, review saved runs, reopen past results, replan a route, and track aggregated savings over time.
 
 ### Settings
 
-- Map provider, units, country, and locale
-- Savings model with fuel price, L/100km, and trip distance
-- Planner defaults for window, step, and route preferences
-- Import, export, and reset
+The Settings tab controls how the planner behaves and how results are interpreted. It includes country and locale preferences, units, map provider selection, default planning behavior, and the savings model used for fuel, money, and CO2 estimates.
 
-## Why It Matters
+## Model used
 
-Congestion drives major economic and environmental costs.
-Predictive departure planning helps fleets, cities, and drivers make informed, efficient, and sustainable decisions before traffic peaks.
+The app does not rely on an LLM for its core recommendation. Its decision engine uses two layers:
 
-## API Endpoints
+1. `Google Routes API v2` as the source of traffic-aware travel-time estimates (`routingPreference: TRAFFIC_AWARE_OPTIMAL`).
+2. A small explainable risk/scoring model implemented in [`web/app/api/analyze/_shared.ts`](/Users/azulramirezkuri/Documents/GitHub/congestionai/web/app/api/analyze/_shared.ts:1).
 
-- `/api/analyze` — traffic-aware window sampling with Google Routes v2
-- `/api/forecast` — 72-hour forecast with top windows
+That model combines variables such as:
 
-## What You’re Seeing
+- hour of week
+- peak hour
+- weekend
+- holiday
+- rain
+- ratio between traffic ETA and static ETA
 
-- `Plan` — planning and setup view
-- `Result` — evaluation panel with go-now guidance and alternatives
-- `History` — previous evaluations
-- `Settings` — configuration and defaults
+At the moment, it is a heuristic logistic-style model with fixed weights, designed to stay interpretable and easy to tune. Then the analysis API ranks each sampled option using a blend of ETA and risk to pick the best departure time.
 
-## Tech Stack
+## Tech stack
 
 - Next.js 15
-- React
+- React 19
 - TypeScript
 - Tailwind CSS
 - Google Routes API v2
-- Local and session storage for cache, history, and settings
+- Google Places API
+- `localStorage` and `sessionStorage` for settings, cache, and history
 
-## Getting Started
+## Main structure
+
+- [`web/app/home-client.tsx`](/Users/azulramirezkuri/Documents/GitHub/congestionai/web/app/home-client.tsx:1): landing page and main trip form.
+- [`web/app/api/analyze/route.ts`](/Users/azulramirezkuri/Documents/GitHub/congestionai/web/app/api/analyze/route.ts:1): departure-window comparison API.
+- [`web/app/api/analyze/_shared.ts`](/Users/azulramirezkuri/Documents/GitHub/congestionai/web/app/api/analyze/_shared.ts:1): sample computation, risk scoring, and explanations.
+- [`web/app/api/forecast/route.ts`](/Users/azulramirezkuri/Documents/GitHub/congestionai/web/app/api/forecast/route.ts:1): 72-hour forecast API.
+- [`web/app/api/places-autocomplete/route.ts`](/Users/azulramirezkuri/Documents/GitHub/congestionai/web/app/api/places-autocomplete/route.ts:1): server-side autocomplete proxy.
+- [`web/lib/hooks/usePlacesAutocomplete.ts`](/Users/azulramirezkuri/Documents/GitHub/congestionai/web/lib/hooks/usePlacesAutocomplete.ts:1): autocomplete hook with provider fallback logic.
+
+## Running locally
 
 ```bash
 pnpm install
@@ -66,68 +115,42 @@ cp web/.env.example web/.env.local
 pnpm dev
 ```
 
-## Environment Variables
+## Environment variables
 
-Create `web/.env.local`:
+Create `web/.env.local` with:
 
 ```env
-# Client
 NEXT_PUBLIC_GOOGLE_MAPS_API_KEY=...
-
-# Optional Apple MapKit
-# NEXT_PUBLIC_MAPKIT_TOKEN=...
-
-# Server
 GOOGLE_MAPS_API_KEY_SERVER=...
+
+# Optional
+NEXT_PUBLIC_MAPKIT_TOKEN=...
 ```
 
 Required Google APIs:
 
-- `Routes API` for `/api/analyze` and `/api/forecast`
-- `Places API (New)` for the autocomplete endpoint
-- `Maps JavaScript API` for client-side maps
+- `Routes API`
+- `Places API (New)`
+- `Maps JavaScript API`
 
 ## Scripts
 
-- `pnpm dev` — development
-- `pnpm build` — production build
-- `pnpm start` — production server
-- `pnpm lint` — lint the app
-- `pnpm typecheck` — run TypeScript checks
+- `pnpm dev`
+- `pnpm build`
+- `pnpm start`
+- `pnpm lint`
+- `pnpm typecheck`
 
-## Configuration
+## Current limitations
 
-All defaults live in Settings and persist in localStorage:
+- The forecast is built from Google Routes sampling, not from a proprietary historical traffic dataset.
+- The risk layer uses heuristic weights, not a model trained on real mobility data.
+- Holiday coverage is still based on a small curated set.
+- There is no database yet; history, settings, and cache live in the browser.
 
-- Country for holiday-aware risk
-- Units and locale for formatting
-- Savings model for fuel and trip assumptions
+## Possible next steps
 
-## Holiday Awareness
-
-- Minimal curated holiday sets live in `web/lib/events/holidays.ts`
-- Driven by Settings → Country
-- Reflected in result chips and risk scoring
-
-## What-if Ideas
-
-- Compare best departure vs shifted departures with deltas in time, cost, and CO2
-- Event injection for holidays, concerts, or special traffic scenarios
-
-## Known Limitations
-
-- Forecasts rely on sampled Google Routes data, not a historical speed database
-- Holiday lists are still demo-sized
-- No server database yet; history and settings live in the browser
-
-## Demo Script
-
-1. Open Plan and try CDMX to Puebla with a 120-minute window and 10-minute step.
-2. In Result, show the best departure, advisor chart, holiday/weekend chips, save, and calendar action.
-3. Open History to review metrics and replan a saved trip.
-4. Open Settings and change Country to explain how it affects holiday-aware scoring.
-5. Open Forecast and show the best 72-hour windows.
-
-## Contributing
-
-PRs are welcome. Standards: strict TypeScript, ESLint, and Tailwind.
+- Train or calibrate the scoring layer with real mobility data.
+- Add real weather input instead of leaving rain at `0`.
+- Persist history in a backend and add user accounts.
+- Add special-event signals such as concerts, road closures, or traffic incidents.
