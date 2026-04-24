@@ -57,7 +57,7 @@ export const AutocompleteInput = forwardRef<HTMLInputElement, Props>(
     const inputRef = useRef<HTMLInputElement>(null);
     useImperativeHandle(ref, () => inputRef.current as HTMLInputElement);
 
-    const { ready, preds, query, select, clear, status, error, isQuerying } =
+    const { ready, preds, query, select, clear, error, isQuerying } =
       usePlacesAutocomplete(countryHint);
 
     const [openLocal, setOpenLocal] = useState(false);
