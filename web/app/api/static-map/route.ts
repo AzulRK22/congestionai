@@ -6,7 +6,10 @@ export const runtime = "edge"; // usa tipos DOM (sin Buffer)
 export const revalidate = 300; // 5 min
 
 export async function GET(req: NextRequest) {
-  const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY!;
+  const apiKey =
+    process.env.GOOGLE_MAPS_API_KEY_SERVER ||
+    process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY ||
+    "";
   if (!apiKey) return new Response("missing api key", { status: 500 });
 
   const url = new URL(req.url);
@@ -36,7 +39,10 @@ export async function GET(req: NextRequest) {
 
   const staticUrl = `https://maps.googleapis.com/maps/api/staticmap?${params.toString()}`;
   const upstream = await fetch(staticUrl, { cache: "no-store" });
-  if (!upstream.ok) return new Response("upstream error", { status: 502 });
+  if (!upstream.ok) {
+    const detail = await upstream.text().catch(() => "");
+    return new Response(detail || "upstream error", { status: 502 });
+  }
 
   // ✅ Usa ArrayBuffer (válido en Edge/DOM)
   const ab = await upstream.arrayBuffer();

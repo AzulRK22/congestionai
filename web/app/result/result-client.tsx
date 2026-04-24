@@ -102,6 +102,25 @@ async function copyTextSafe(text: string) {
   }
 }
 
+async function readApiError(res: Response, fallback: string) {
+  const text = await res.text().catch(() => "");
+  if (!text.trim()) return fallback;
+  try {
+    const parsed = JSON.parse(text) as {
+      error?: string;
+      upstream?: { status?: number; message?: string | null } | null;
+    };
+    if (parsed.upstream?.status || parsed.upstream?.message) {
+      const status = parsed.upstream.status ? `${parsed.upstream.status}` : "";
+      const message = parsed.upstream.message ?? parsed.error ?? fallback;
+      return [status, message].filter(Boolean).join(" — ");
+    }
+    return parsed.error ?? fallback;
+  } catch {
+    return text;
+  }
+}
+
 export default function ResultClient() {
   const sp = useSearchParams();
   const router = useRouter();
@@ -249,7 +268,24 @@ export default function ResultClient() {
             setData(json2);
             return;
           }
-          throw new Error(`HTTP ${res.status}`);
+          let message = `HTTP ${res.status}`;
+          try {
+            const parsed = JSON.parse(txt) as {
+              error?: string;
+              upstream?: { status?: number; message?: string | null } | null;
+            };
+            if (parsed.upstream?.status || parsed.upstream?.message) {
+              message = [
+                parsed.upstream.status ? `${parsed.upstream.status}` : "",
+                parsed.upstream.message ?? parsed.error ?? `HTTP ${res.status}`,
+              ]
+                .filter(Boolean)
+                .join(" — ");
+            } else if (parsed.error) {
+              message = parsed.error;
+            }
+          } catch {}
+          throw new Error(message);
         }
 
         const json = (await res.json()) as AnalyzeResponse;
@@ -434,14 +470,10 @@ export default function ResultClient() {
           }),
         });
         if (!res.ok) {
-          if (res.status === 502) {
-            setFcErr(
-              "502 — upstream hiccup. Try again or reduce horizon/step.",
-            );
-            setFc(null);
-            return;
-          }
-          throw new Error(`HTTP ${res.status}`);
+          const message = await readApiError(res, `HTTP ${res.status}`);
+          setFcErr(message);
+          setFc(null);
+          return;
         }
         const json = (await res.json()) as ForecastResponse;
         setFc(json);

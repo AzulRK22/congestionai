@@ -25,10 +25,29 @@ const PROFILES: Profile[] = [
 export default function SettingsClient() {
   const [s, setS] = useState<AppSettings>(defaultSettings);
   const { hasGmaps, hasMapKit } = apiStatus();
+  const [runtimeStatus, setRuntimeStatus] = useState<{
+    hasServerRoutesKey: boolean;
+  } | null>(null);
 
   // cargar settings en cliente
   useEffect(() => {
     setS(loadSettings());
+  }, []);
+
+  useEffect(() => {
+    const ctrl = new AbortController();
+    (async () => {
+      try {
+        const res = await fetch("/api/runtime-status", {
+          signal: ctrl.signal,
+          cache: "no-store",
+        });
+        if (!res.ok) return;
+        const json = (await res.json()) as { hasServerRoutesKey: boolean };
+        setRuntimeStatus(json);
+      } catch {}
+    })();
+    return () => ctrl.abort();
   }, []);
 
   const dirty = useMemo(
@@ -392,6 +411,20 @@ export default function SettingsClient() {
               {hasMapKit
                 ? "OK — NEXT_PUBLIC_MAPKIT_TOKEN found"
                 : "Optional — add NEXT_PUBLIC_MAPKIT_TOKEN to enable"}
+            </div>
+          </div>
+          <div className="rounded-xl border p-3 bg-white sm:col-span-2">
+            <div className="text-xs text-slate-500">Routes API (server runtime)</div>
+            <div
+              className={`text-sm mt-1 ${
+                runtimeStatus?.hasServerRoutesKey
+                  ? "text-emerald-600"
+                  : "text-amber-600"
+              }`}
+            >
+              {runtimeStatus?.hasServerRoutesKey
+                ? "OK — GOOGLE_MAPS_API_KEY_SERVER available in runtime"
+                : "Missing or unreadable — add GOOGLE_MAPS_API_KEY_SERVER in Vercel/local runtime"}
             </div>
           </div>
         </div>

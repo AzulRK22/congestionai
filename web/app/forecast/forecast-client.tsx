@@ -14,6 +14,25 @@ function isoAt(baseMs: number, tMin: number) {
   return new Date(baseMs + tMin * 60_000).toISOString();
 }
 
+async function readApiError(res: Response, fallback: string) {
+  const text = await res.text().catch(() => "");
+  if (!text.trim()) return fallback;
+  try {
+    const parsed = JSON.parse(text) as {
+      error?: string;
+      upstream?: { status?: number; message?: string | null } | null;
+    };
+    if (parsed.upstream?.status || parsed.upstream?.message) {
+      const status = parsed.upstream.status ? `${parsed.upstream.status}` : "";
+      const message = parsed.upstream.message ?? parsed.error ?? fallback;
+      return [status, message].filter(Boolean).join(" — ");
+    }
+    return parsed.error ?? fallback;
+  } catch {
+    return text;
+  }
+}
+
 export default function ForecastClient() {
   const sp = useSearchParams();
   const router = useRouter();
@@ -68,7 +87,9 @@ export default function ForecastClient() {
             country,
           }),
         });
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        if (!res.ok) {
+          throw new Error(await readApiError(res, `HTTP ${res.status}`));
+        }
         const json = (await res.json()) as ForecastResponse;
         setData(json);
       } catch (e) {
