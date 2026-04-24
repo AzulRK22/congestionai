@@ -104,7 +104,17 @@ export default function SettingsClient() {
 
   return (
     <div className="space-y-4">
-      {/* Toolbar */}
+      <SectionCard className="hero-mesh">
+        <span className="eyebrow">Workspace defaults</span>
+        <h2 className="mt-3 text-3xl font-semibold tracking-tight [font-family:var(--font-display)]">
+          Tune how CongestionAI evaluates and remembers your trips.
+        </h2>
+        <p className="mt-3 max-w-3xl text-sm leading-7 text-slate-600">
+          These settings shape the planner presets, savings calculations, map
+          behavior, and how forecast context gets interpreted.
+        </p>
+      </SectionCard>
+
       <div className="flex justify-end gap-2">
         <label className="btn btn-outline cursor-pointer">
           Import
@@ -126,7 +136,6 @@ export default function SettingsClient() {
         </Button>
       </div>
 
-      {/* Region & units */}
       <SectionCard>
         <h3 className="font-semibold mb-3">Region & units</h3>
         <p className="text-xs text-slate-500 mb-3">
@@ -213,7 +222,6 @@ export default function SettingsClient() {
         </div>
       </SectionCard>
 
-      {/* Savings & CO₂ */}
       <SectionCard>
         <h3 className="font-semibold mb-3">Savings & CO₂ (defaults)</h3>
         <p className="text-xs text-slate-500 mb-3">
@@ -288,7 +296,6 @@ export default function SettingsClient() {
         </p>
       </SectionCard>
 
-      {/* Planner defaults */}
       <SectionCard>
         <h3 className="font-semibold mb-3">Planner defaults</h3>
         <div className="grid gap-3 sm:grid-cols-3">
@@ -362,7 +369,6 @@ export default function SettingsClient() {
         </div>
       </SectionCard>
 
-      {/* Developer (colapsable) */}
       <details className="rounded-2xl border bg-white p-3 open:shadow-sm">
         <summary className="cursor-pointer text-sm font-medium text-slate-700">
           Developer (API keys & diagnostics)

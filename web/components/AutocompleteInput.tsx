@@ -57,7 +57,7 @@ export const AutocompleteInput = forwardRef<HTMLInputElement, Props>(
     const inputRef = useRef<HTMLInputElement>(null);
     useImperativeHandle(ref, () => inputRef.current as HTMLInputElement);
 
-    const { ready, preds, query, select, clear } =
+    const { ready, preds, query, select, clear, status, error } =
       usePlacesAutocomplete(countryHint);
 
     const [openLocal, setOpenLocal] = useState(false);
@@ -67,6 +67,10 @@ export const AutocompleteInput = forwardRef<HTMLInputElement, Props>(
 
     const isActive = activeId ? activeId === selfId : true;
     const open = openLocal && isActive && preds.length > 0;
+    const showHelper =
+      isActive &&
+      q.trim().length >= 3 &&
+      (status === "loading" || !!error || (ready && openLocal && !preds.length));
 
     const listId = `${id ?? selfId}-listbox`;
     const activeOptId =
@@ -126,17 +130,17 @@ export const AutocompleteInput = forwardRef<HTMLInputElement, Props>(
     }
 
     function onKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
-      if (!open || !preds.length) return;
-      if (e.key === "ArrowDown") {
+      if (e.key === "ArrowDown" && open && preds.length) {
         e.preventDefault();
         setHi((i) => (i + 1) % preds.length);
-      } else if (e.key === "ArrowUp") {
+      } else if (e.key === "ArrowUp" && open && preds.length) {
         e.preventDefault();
         setHi((i) => (i <= 0 ? preds.length - 1 : i - 1));
       } else if (e.key === "Enter") {
-        if (hi >= 0) {
-          e.preventDefault();
-          handleSelect((preds[hi] as Pred).description);
+        if (!q.trim()) return;
+        e.preventDefault();
+        if (open && preds.length) {
+          handleSelect((preds[hi >= 0 ? hi : 0] as Pred).description);
         }
       } else if (e.key === "Escape") {
         setOpenLocal(false);
@@ -275,6 +279,15 @@ export const AutocompleteInput = forwardRef<HTMLInputElement, Props>(
                 );
               })}
             </ul>
+          </div>
+        )}
+
+        {showHelper && !open && (
+          <div className="mt-2 rounded-2xl border border-slate-200 bg-white/80 px-3 py-2 text-xs text-slate-600">
+            {status === "loading" && "Buscando sugerencias..."}
+            {status !== "loading" &&
+              (error ||
+                "Sin sugerencias por ahora. Prueba con una direccion mas completa.")}
           </div>
         )}
       </div>

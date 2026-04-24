@@ -132,9 +132,17 @@ export default function ForecastClient() {
 
   return (
     <section className="space-y-6">
-      {/* FORM */}
-      <SectionCard>
-        <h3 className="font-semibold mb-3">72h Forecast</h3>
+      <SectionCard className="hero-mesh">
+        <div className="mb-4">
+          <span className="eyebrow">Forecast explorer</span>
+          <h1 className="mt-3 text-3xl font-semibold tracking-tight [font-family:var(--font-display)] sm:text-4xl">
+            Spot calmer departure windows across the next 72 hours.
+          </h1>
+          <p className="mt-3 max-w-3xl text-sm leading-7 text-slate-600">
+            Use the forecast when your trip is flexible and you want to compare
+            broader patterns before jumping into the detailed result view.
+          </p>
+        </div>
         <form
           onSubmit={onSubmit}
           className="grid gap-3 md:grid-cols-[1fr_1fr_auto_auto_auto] md:items-end"
@@ -197,14 +205,20 @@ export default function ForecastClient() {
         </p>
       </SectionCard>
 
-      {/* HEATMAP */}
       <SectionCard staticCard>
-        <h3 className="font-semibold mb-3">Heatmap (ETA & risk)</h3>
+        <div className="mb-4">
+          <div className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
+            Forecast signal
+          </div>
+          <h3 className="mt-2 text-2xl font-semibold tracking-tight [font-family:var(--font-display)]">
+            Heatmap of ETA and route pressure
+          </h3>
+        </div>
         {loading && (
           <div className="h-28 rounded-2xl bg-slate-100 animate-pulse" />
         )}
         {err && (
-          <div className="rounded-md border border-red-200 bg-red-50 text-red-700 p-3 text-sm">
+          <div className="rounded-2xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">
             {err}
           </div>
         )}
@@ -216,16 +230,22 @@ export default function ForecastClient() {
           />
         )}
         {!loading && !data && (
-          <div className="rounded-xl border bg-slate-50 p-3 text-sm text-slate-600">
+          <div className="rounded-[24px] border border-dashed bg-slate-50 p-4 text-sm text-slate-600">
             Enter origin & destination to see the 72h forecast.
           </div>
         )}
       </SectionCard>
 
-      {/* TOP WINDOWS */}
       {data && (
         <SectionCard>
-          <h3 className="font-semibold mb-3">Top windows</h3>
+          <div className="mb-4">
+            <div className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
+              Recommended slots
+            </div>
+            <h3 className="mt-2 text-2xl font-semibold tracking-tight [font-family:var(--font-display)]">
+              Best departure windows from this forecast
+            </h3>
+          </div>
           <ul className="grid gap-2">
             {data.bestWindows.map((w, i) => {
               const t = new Date(w.startISO).toLocaleString([], {
@@ -236,7 +256,7 @@ export default function ForecastClient() {
               return (
                 <li
                   key={`${w.startISO}-${w.tMin}-${i}`}
-                  className="flex items-center justify-between rounded-xl border bg-white p-3"
+                  className="flex items-center justify-between rounded-[24px] border border-slate-200 bg-white/75 p-4"
                 >
                   <div>
                     <div className="font-medium">{t}</div>

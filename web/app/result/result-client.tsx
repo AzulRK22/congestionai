@@ -77,6 +77,31 @@ function cacheClear() {
   } catch {}
 }
 
+async function copyTextSafe(text: string) {
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text);
+      return true;
+    }
+  } catch {}
+
+  try {
+    const ta = document.createElement("textarea");
+    ta.value = text;
+    ta.setAttribute("readonly", "");
+    ta.style.position = "fixed";
+    ta.style.opacity = "0";
+    document.body.appendChild(ta);
+    ta.focus();
+    ta.select();
+    const ok = document.execCommand("copy");
+    document.body.removeChild(ta);
+    return ok;
+  } catch {
+    return false;
+  }
+}
+
 export default function ResultClient() {
   const sp = useSearchParams();
   const router = useRouter();
@@ -276,7 +301,7 @@ export default function ResultClient() {
     a.click();
   };
 
-  const handleShare = () => {
+  const handleShare = async () => {
     if (!data?.best) return;
     const tStr = new Date(data.best.departAtISO).toLocaleTimeString(
       settings?.locale || undefined,
@@ -284,11 +309,13 @@ export default function ResultClient() {
     );
     const pct = Math.round((data.best.savingVsNow || 0) * 100);
     const msg = `Leave at ${tStr}. ETA ~${data.best.etaMin} min (saves ${pct}%) – CongestionAI`;
-    if (navigator.share)
-      navigator
-        .share({ text: msg })
-        .catch(() => navigator.clipboard.writeText(msg));
-    else navigator.clipboard.writeText(msg);
+    try {
+      if (navigator.share) {
+        await navigator.share({ text: msg });
+        return;
+      }
+    } catch {}
+    await copyTextSafe(msg);
   };
 
   // savings model using Settings
@@ -447,29 +474,65 @@ export default function ResultClient() {
 
   return (
     <section className="space-y-6">
-      <SectionCard>
-        <PlannerForm
-          initialOrigin={originQ ?? ""}
-          initialDestination={destinationQ ?? ""}
-          initialOptions={initialPlannerOptions}
-          onSubmit={(o, d, opts) => {
-            const q = new URLSearchParams({
-              origin: o,
-              destination: d,
-              window: String(opts.windowMins),
-              step: String(opts.stepMins),
-              refine: opts.refine ? "1" : "0",
-              offset: String(Math.max(opts.departOffsetMin, 1)),
-              avoidTolls: opts.avoidTolls ? "1" : "0",
-              avoidHighways: opts.avoidHighways ? "1" : "0",
-            });
-            router.replace(`/result?${q.toString()}`);
-          }}
-        />
+      <SectionCard className="hero-mesh">
+        <div className="grid gap-5 lg:grid-cols-[0.9fr_1.1fr] lg:items-start">
+          <div className="space-y-3">
+            <span className="eyebrow">Live trip analysis</span>
+            <h1 className="text-3xl font-semibold tracking-tight [font-family:var(--font-display)] sm:text-4xl">
+              Decide whether to leave now or wait for a better traffic window.
+            </h1>
+            <p className="text-sm leading-7 text-slate-600">
+              We compare ETA, route risk, and short-term alternatives for the
+              same trip so the recommendation feels actionable, not just
+              descriptive.
+            </p>
+          </div>
+          <div className="rounded-[28px] border border-white/70 bg-white/75 p-4">
+            <PlannerForm
+              initialOrigin={originQ ?? ""}
+              initialDestination={destinationQ ?? ""}
+              initialOptions={initialPlannerOptions}
+              onSubmit={(o, d, opts) => {
+                const q = new URLSearchParams({
+                  origin: o,
+                  destination: d,
+                  window: String(opts.windowMins),
+                  step: String(opts.stepMins),
+                  refine: opts.refine ? "1" : "0",
+                  offset: String(Math.max(opts.departOffsetMin, 1)),
+                  avoidTolls: opts.avoidTolls ? "1" : "0",
+                  avoidHighways: opts.avoidHighways ? "1" : "0",
+                });
+                router.replace(`/result?${q.toString()}`);
+              }}
+            />
+          </div>
+        </div>
       </SectionCard>
 
-      <SectionCard staticCard>
-        <h3 className="font-semibold mb-3">Map</h3>
+      {!valid && (
+        <SectionCard>
+          <div className="rounded-[24px] border border-dashed border-slate-300 bg-white/60 p-6 text-sm text-slate-600">
+            Add both origin and destination above to load the route map,
+            departure advisor, and best-window recommendation.
+          </div>
+        </SectionCard>
+      )}
+
+      <SectionCard>
+        <div className="mb-4 flex items-end justify-between gap-3">
+          <div>
+            <div className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
+              Route context
+            </div>
+            <h2 className="mt-2 text-2xl font-semibold tracking-tight [font-family:var(--font-display)]">
+              Map and traffic segment preview
+            </h2>
+          </div>
+          <div className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs text-slate-600">
+            Provider: {provider}
+          </div>
+        </div>
         {valid ? (
           <MapContainer
             provider={provider}
@@ -479,27 +542,31 @@ export default function ResultClient() {
             sri={data?.best?.sri as SpeedReadingInterval[] | undefined}
           />
         ) : (
-          <div className="h-72 rounded-2xl border bg-slate-50 grid place-items-center text-sm text-slate-500">
+          <div className="grid h-72 place-items-center rounded-[28px] border border-dashed border-slate-300 bg-slate-50 text-sm text-slate-500">
             Type origin and destination to see the route.
           </div>
         )}
       </SectionCard>
 
       {loading && (
-        <div className="h-28 rounded-2xl bg-slate-100 animate-pulse" />
+        <SectionCard staticCard>
+          <div className="h-28 animate-pulse rounded-2xl bg-slate-100" />
+        </SectionCard>
       )}
       <div aria-live="polite" className="sr-only">
         {loading ? "Calculating route…" : "Ready"}
       </div>
 
       {err && (
-        <div className="rounded-md border border-red-200 bg-red-50 text-red-700 p-3 text-sm">
+        <SectionCard>
+          <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
           {err.includes("HTTP 403") &&
             "403 – check your Google server key/billing."}
           {err.includes("HTTP 429") &&
             "429 – rate limit. Lower step/window or enable budget mode."}
           {!err.includes("HTTP") && err}
-        </div>
+          </div>
+        </SectionCard>
       )}
 
       {data && !loading && !err && (
@@ -530,18 +597,13 @@ export default function ResultClient() {
                 alert("Saved to History ✅");
               }}
             />
-            {/* --- GO/NOW DECISION (mini badge) --- */}
             {data?.best && (
-              <div className="mt-2">
+              <div className="mt-4 border-t soft-divider pt-4">
                 {(() => {
-                  // Heurística simple:
-                  // - If savingVsNow < 7% y riesgo < 0.6 → OK to go
-                  // - en otro caso → Not yet (sugiere esperar hasta la mejor ventana)
                   const saving = data.best.savingVsNow ?? 0; // 0..1
                   const risk = data.best.risk ?? 0.5;
                   const ok = saving < 0.07 && risk < 0.6;
 
-                  // ETA "actual" estimada desde savingVsNow (si no viene, estimamos suave)
                   const bestEta = data.best.etaMin;
                   const baselineEta =
                     saving > 0
@@ -578,9 +640,14 @@ export default function ResultClient() {
           </SectionCard>
 
           <SectionCard>
-            <h3 className="font-semibold mb-3">
-              Departure advisor (next window)
-            </h3>
+            <div className="mb-4">
+              <div className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
+                Near-term comparison
+              </div>
+              <h3 className="mt-2 text-2xl font-semibold tracking-tight [font-family:var(--font-display)]">
+                Departure advisor for the next window
+              </h3>
+            </div>
             <Heatmap
               points={resultPoints}
               nowISO={resultNowISO}
@@ -591,7 +658,7 @@ export default function ResultClient() {
           {/* ====== 72h Forecast (Beta) ====== */}
           <SectionCard>
             <div className="flex items-center justify-between mb-2">
-              <h3 className="font-semibold">
+              <h3 className="text-2xl font-semibold tracking-tight [font-family:var(--font-display)]">
                 72h Forecast{" "}
                 <span className="align-middle ml-2 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-medium text-amber-700">
                   Beta
@@ -630,7 +697,7 @@ export default function ResultClient() {
                       return (
                         <li
                           key={w.startISO}
-                          className="flex items-center justify-between rounded-lg border p-2"
+                          className="flex items-center justify-between rounded-2xl border border-slate-200 bg-white/70 p-3"
                         >
                           <div>
                             <div className="font-medium">{t}</div>

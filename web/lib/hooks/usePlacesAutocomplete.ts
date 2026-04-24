@@ -2,10 +2,14 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ensureGooglePlaces } from "@/lib/map/loaders";
+import { ensureGoogleMaps } from "@/lib/map/loaders";
 
-type Status = "idle" | "ready" | "error";
+type Status = "idle" | "loading" | "ready" | "error";
 export type Prediction = google.maps.places.AutocompletePrediction;
+type PlacesCtorLib = {
+  AutocompleteService?: new () => google.maps.places.AutocompleteService;
+  AutocompleteSessionToken?: new () => google.maps.places.AutocompleteSessionToken;
+};
 
 export function usePlacesAutocomplete(countryHint: string[] = ["mx"]) {
   const svc = useRef<google.maps.places.AutocompleteService | null>(null);
@@ -16,6 +20,7 @@ export function usePlacesAutocomplete(countryHint: string[] = ["mx"]) {
 
   const [status, setStatus] = useState<Status>("idle");
   const [preds, setPreds] = useState<Prediction[]>([]);
+  const [error, setError] = useState<string | null>(null);
   const ready = status === "ready";
 
   // Carga Places y prepara servicio + token
@@ -23,26 +28,35 @@ export function usePlacesAutocomplete(countryHint: string[] = ["mx"]) {
     let cancelled = false;
     (async () => {
       try {
-        await ensureGooglePlaces();
+        setStatus("loading");
+        setError(null);
+        const libs = await ensureGoogleMaps(["places"]);
         if (cancelled) return;
 
-        const g = (window as unknown as { google?: typeof google }).google;
-        const maps = g?.maps;
+        const places =
+          (libs.places as PlacesCtorLib | undefined) ??
+          ((window as unknown as { google?: typeof google }).google?.maps
+            ?.places as PlacesCtorLib | undefined);
 
         if (
-          !maps?.places?.AutocompleteService ||
-          !maps.places.AutocompleteSessionToken
+          !places?.AutocompleteService ||
+          !places.AutocompleteSessionToken
         ) {
+          setError(
+            "Autocomplete no disponible. Puedes escribir la direccion completa.",
+          );
           setStatus("error");
           return;
         }
 
-        svc.current = new maps.places.AutocompleteService();
-        token.current = new maps.places.AutocompleteSessionToken();
+        svc.current = new places.AutocompleteService();
+        token.current = new places.AutocompleteSessionToken();
+        setError(null);
         setStatus("ready");
-      } catch (e) {
-        // eslint-disable-next-line no-console
-        console.error("[usePlacesAutocomplete] no disponible:", e);
+      } catch {
+        setError(
+          "No se pudo conectar con Google Places. Puedes seguir escribiendo manualmente.",
+        );
         setStatus("error");
       }
     })();
@@ -58,7 +72,7 @@ export function usePlacesAutocomplete(countryHint: string[] = ["mx"]) {
       (pos) => {
         const g = (window as unknown as { google?: typeof google }).google;
         const maps = g?.maps;
-        if (!maps) return;
+        if (!maps?.LatLng) return;
         geoCenter.current = new maps.LatLng(
           pos.coords.latitude,
           pos.coords.longitude,
@@ -123,9 +137,29 @@ export function usePlacesAutocomplete(countryHint: string[] = ["mx"]) {
             st !== google.maps.places.PlacesServiceStatus.OK ||
             !results?.length
           ) {
+            if (
+              st === google.maps.places.PlacesServiceStatus.ZERO_RESULTS ||
+              !results?.length
+            ) {
+              setError("Sin sugerencias. Prueba otra forma de escribir el lugar.");
+            } else if (
+              st === google.maps.places.PlacesServiceStatus.REQUEST_DENIED
+            ) {
+              setError(
+                "Google Places rechazo la solicitud. Revisa tu API key y restricciones.",
+              );
+              setStatus("error");
+            } else if (
+              st === google.maps.places.PlacesServiceStatus.OVER_QUERY_LIMIT
+            ) {
+              setError("Se alcanzo el limite de consultas de Google Places.");
+            } else {
+              setError("No pudimos obtener sugerencias en este momento.");
+            }
             setPreds((p) => (p.length ? [] : p));
             return;
           }
+          setError(null);
           setPreds(results);
         },
       );
@@ -144,8 +178,9 @@ export function usePlacesAutocomplete(countryHint: string[] = ["mx"]) {
   }, []);
 
   const clear = useCallback(() => {
+    setError(null);
     setPreds((p) => (p.length ? [] : p));
   }, []);
 
-  return { ready, preds, query, select, clear };
+  return { ready, preds, query, select, clear, status, error };
 }

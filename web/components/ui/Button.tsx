@@ -21,9 +21,9 @@ export function Button({
       {...props}
       disabled={disabled || loading}
       className={clsx(
-        "btn",
+        "btn shadow-sm",
         variant === "primary" ? "btn-primary" : "btn-outline",
-        size === "sm" ? "px-3 py-1.5 text-xs" : "",
+        size === "sm" ? "px-3 py-2 text-xs" : "px-5 py-3",
         (disabled || loading) && "cursor-not-allowed",
         className,
       )}

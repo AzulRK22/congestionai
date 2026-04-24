@@ -12,13 +12,13 @@ export function SectionCard({
   staticCard?: boolean;
 }) {
   if (staticCard)
-    return <div className={`card p-4 ${className}`}>{children}</div>;
+    return <div className={`card p-5 md:p-6 ${className}`}>{children}</div>;
   return (
     <motion.div
       initial={{ opacity: 0, y: 6 }}
       animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.18 }}
-      className={`card p-4 ${className}`}
+      transition={{ duration: 0.22, ease: "easeOut" }}
+      className={`card p-5 md:p-6 ${className}`}
     >
       {children}
     </motion.div>

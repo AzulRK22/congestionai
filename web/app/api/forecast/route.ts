@@ -1,6 +1,7 @@
 // app/api/forecast/route.ts
 import { NextResponse } from "next/server";
 import { computeSample } from "../analyze/_shared";
+import type { WaypointInput } from "@/types/analyze";
 
 export const runtime = "nodejs";
 // Subir si tu plataforma lo permite (Vercel/Node)
@@ -16,10 +17,30 @@ type SampleDTO = {
   risk: number;
 };
 
+type ForecastBody = {
+  origin: WaypointInput;
+  destination: WaypointInput;
+  horizonHours?: number;
+  stepMins?: number;
+  avoidTolls?: boolean;
+  avoidHighways?: boolean;
+  country?: Ctry;
+};
+
 function clamp(n: unknown, def: number, min: number, max: number) {
   const v = Number(n);
   if (!Number.isFinite(v)) return def;
   return Math.max(min, Math.min(max, v));
+}
+
+async function readJsonBody(req: Request): Promise<ForecastBody | null> {
+  const text = await req.text();
+  if (!text.trim()) return null;
+  try {
+    return JSON.parse(text) as ForecastBody;
+  } catch {
+    return null;
+  }
 }
 
 async function runWithLimit<T>(
@@ -47,6 +68,14 @@ async function runWithLimit<T>(
 }
 
 export async function POST(req: Request) {
+  const body = await readJsonBody(req);
+  if (!body) {
+    return NextResponse.json(
+      { error: "invalid or empty JSON body" },
+      { status: 400 },
+    );
+  }
+
   const {
     origin,
     destination,
@@ -55,7 +84,7 @@ export async function POST(req: Request) {
     avoidTolls = false,
     avoidHighways = false,
     country = "mx",
-  } = await req.json();
+  } = body;
 
   if (!origin || !destination) {
     return NextResponse.json({ error: "missing params" }, { status: 400 });

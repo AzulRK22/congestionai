@@ -114,12 +114,22 @@ export default function HistoryClient() {
 
   return (
     <div className="space-y-4">
-      {/* Metrics */}
+      <SectionCard className="hero-mesh">
+        <span className="eyebrow">Trip memory</span>
+        <h2 className="mt-3 text-3xl font-semibold tracking-tight [font-family:var(--font-display)]">
+          Revisit saved departure decisions and compare patterns over time.
+        </h2>
+        <p className="mt-3 max-w-3xl text-sm leading-7 text-slate-600">
+          History works best as a lightweight operations log: keep the routes
+          that matter, pin recurring trips, and export decisions when you need
+          to share them.
+        </p>
+      </SectionCard>
+
       <SectionCard>
         <HistoryMetrics items={filtered} />
       </SectionCard>
 
-      {/* Filters */}
       <SectionCard>
         <div className="grid gap-3 md:grid-cols-[1fr_auto_auto] md:items-end">
           <div>
@@ -172,10 +182,9 @@ export default function HistoryClient() {
         </div>
       </SectionCard>
 
-      {/* List / Empty */}
       {filtered.length === 0 ? (
         <SectionCard>
-          <div className="text-sm text-slate-600">
+          <div className="rounded-[24px] border border-dashed border-slate-300 bg-white/50 p-5 text-sm text-slate-600">
             No history yet. Plan a route and click <em>Save to history</em> in
             the result.
           </div>

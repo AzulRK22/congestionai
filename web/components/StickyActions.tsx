@@ -11,12 +11,12 @@ export function StickyActions({
   return (
     <div className="sticky-actions">
       <div>
-        <div className="card p-2 flex gap-2 justify-end">
+        <div className="card flex gap-2 justify-end p-2">
           <button onClick={onShare} className="btn btn-outline">
             <Share2 size={16} className="mr-2" /> Share
           </button>
           <button onClick={onCalendar} className="btn btn-primary">
-            <CalendarPlus size={16} className="mr-2" /> add
+            <CalendarPlus size={16} className="mr-2" /> Add to calendar
           </button>
         </div>
       </div>

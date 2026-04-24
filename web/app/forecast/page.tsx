@@ -9,7 +9,9 @@ export default function ForecastPage() {
   return (
     <Suspense
       fallback={
-        <div className="p-4 text-sm text-slate-500">Cargando forecast…</div>
+        <div className="rounded-2xl bg-white/70 p-4 text-sm text-slate-500">
+          Loading forecast…
+        </div>
       }
     >
       <ForecastClient />

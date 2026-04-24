@@ -154,12 +154,14 @@ export async function ensureGoogleMaps(
 }
 
 export async function ensureGooglePlaces(): Promise<PlacesLib> {
-  await injectGoogleScript();
-  const places = (
-    window as unknown as {
-      google?: { maps?: { places?: PlacesLib } };
-    }
-  ).google?.maps?.places;
+  const libs = await ensureGoogleMaps(["places"]);
+  const places =
+    libs.places ??
+    (
+      window as unknown as {
+        google?: { maps?: { places?: PlacesLib } };
+      }
+    ).google?.maps?.places;
   if (!places) throw new Error("Google Places no disponible");
   return places;
 }

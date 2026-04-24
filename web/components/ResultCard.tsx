@@ -44,6 +44,31 @@ function parseExplainChips(explain: string[] | undefined) {
   return out.sort((a, b) => b.pct - a.pct);
 }
 
+async function copyTextSafe(text: string) {
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text);
+      return true;
+    }
+  } catch {}
+
+  try {
+    const ta = document.createElement("textarea");
+    ta.value = text;
+    ta.setAttribute("readonly", "");
+    ta.style.position = "fixed";
+    ta.style.opacity = "0";
+    document.body.appendChild(ta);
+    ta.focus();
+    ta.select();
+    const ok = document.execCommand("copy");
+    document.body.removeChild(ta);
+    return ok;
+  } catch {
+    return false;
+  }
+}
+
 export function ResultCard({
   result,
   savings,
@@ -82,44 +107,48 @@ export function ResultCard({
     a.click();
   }
 
-  function share() {
+  async function share() {
     if (!best) return;
     const msg = `Leave at ${tStr}. ETA ~${best.etaMin} min (saves ${savingPct}%) – CongestionAI`;
-    if (navigator.share)
-      navigator
-        .share({ text: msg })
-        .catch(() => navigator.clipboard.writeText(msg));
-    else navigator.clipboard.writeText(msg);
+    try {
+      if (navigator.share) {
+        await navigator.share({ text: msg });
+        return;
+      }
+    } catch {}
+    await copyTextSafe(msg);
   }
 
   return (
-    <div className="grid gap-3">
-      {/* Header: time + quick gain */}
-      <div className="flex items-end justify-between">
+    <div className="grid gap-5">
+      <div className="grid gap-4 rounded-[28px] border border-white/70 bg-gradient-to-br from-teal-950 via-teal-900 to-slate-900 p-5 text-white shadow-xl shadow-teal-950/10 md:grid-cols-[1fr_auto] md:items-end">
         <div>
-          <div className="text-sm text-slate-500">Best departure</div>
-          <div className="text-4xl font-semibold leading-none">{tStr}</div>
-        </div>
-        <div className="text-right">
-          <span
-            className="inline-flex items-center text-xs px-2 py-1 rounded-full border bg-emerald-50 text-emerald-700 border-emerald-200"
-            title="Estimated time saved vs leaving now"
-          >
-            Saves {savingPct}%
-          </span>
-          <div className="text-sm text-slate-600 mt-1">
-            ETA {best?.etaMin} min
+          <div className="text-xs font-semibold uppercase tracking-[0.18em] text-teal-100/80">
+            Recommended departure
           </div>
+          <div className="mt-3 text-5xl font-semibold leading-none [font-family:var(--font-display)]">
+            {tStr}
+          </div>
+          <p className="mt-3 max-w-xl text-sm leading-6 text-teal-50/80">
+            This is the strongest tradeoff between ETA and congestion risk in
+            the current search window.
+          </p>
+        </div>
+        <div className="rounded-[24px] border border-white/12 bg-white/10 p-4 text-left md:min-w-44">
+          <div className="text-xs uppercase tracking-[0.18em] text-teal-50/70">
+            Expected trip
+          </div>
+          <div className="mt-2 text-2xl font-semibold">ETA {best?.etaMin} min</div>
+          <div className="mt-2 text-sm text-teal-50/75">Saves {savingPct}% vs leaving now</div>
         </div>
       </div>
 
-      {/* Explainability chips */}
       {chips.length > 0 && (
         <div className="flex flex-wrap gap-2">
           {chips.slice(0, 5).map((c, i) => (
             <span
               key={i}
-              className={`inline-flex items-center text-xs px-2 py-1 rounded-full border ${c.className}`}
+              className={`inline-flex items-center rounded-full border px-3 py-1.5 text-xs ${c.className}`}
               title="Factor impact"
             >
               <Info size={12} className="mr-1" />
@@ -129,25 +158,29 @@ export function ResultCard({
         </div>
       )}
 
-      {/* Savings tiles (money, fuel, CO2) */}
       {savings && (
         <div className="grid grid-cols-3 gap-2">
-          <div className="rounded-xl border bg-white p-3 text-center">
-            <div className="text-xs text-slate-500">Money saved</div>
-            <div className="text-lg font-semibold">${savings.pesos}</div>
+          <div className="rounded-[24px] border border-slate-200/70 bg-white/80 p-4 text-center">
+            <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
+              Money
+            </div>
+            <div className="mt-2 text-lg font-semibold">${savings.pesos}</div>
           </div>
-          <div className="rounded-xl border bg-white p-3 text-center">
-            <div className="text-xs text-slate-500">Fuel saved</div>
-            <div className="text-lg font-semibold">{savings.liters} L</div>
+          <div className="rounded-[24px] border border-slate-200/70 bg-white/80 p-4 text-center">
+            <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
+              Fuel
+            </div>
+            <div className="mt-2 text-lg font-semibold">{savings.liters} L</div>
           </div>
-          <div className="rounded-xl border bg-white p-3 text-center">
-            <div className="text-xs text-slate-500">CO₂ avoided</div>
-            <div className="text-lg font-semibold">{savings.kgCO2} kg</div>
+          <div className="rounded-[24px] border border-slate-200/70 bg-white/80 p-4 text-center">
+            <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
+              CO2
+            </div>
+            <div className="mt-2 text-lg font-semibold">{savings.kgCO2} kg</div>
           </div>
         </div>
       )}
 
-      {/* Actions */}
       <div className="mt-2 flex gap-2 flex-wrap">
         <button
           onClick={addICS}
@@ -168,15 +201,19 @@ export function ResultCard({
         </button>
       </div>
 
-      {/* Alternatives */}
       {result.alternatives?.length > 0 && (
-        <div className="mt-1">
-          <div className="text-sm font-medium">Nearby alternatives</div>
-          <ul className="mt-1 grid gap-1 text-sm text-slate-600">
+        <div className="mt-1 rounded-[24px] border border-slate-200/70 bg-white/70 p-4">
+          <div className="text-sm font-medium text-slate-900">
+            Nearby alternatives
+          </div>
+          <ul className="mt-3 grid gap-2 text-sm text-slate-600">
             {result.alternatives
               .slice(0, 5)
               .map((a: { departAtISO: string; etaMin: number }, i: number) => (
-                <li key={i} className="flex justify-between">
+                <li
+                  key={i}
+                  className="flex justify-between rounded-2xl border border-slate-100 bg-white px-3 py-2"
+                >
                   <span>{formatTime(a.departAtISO)}</span>
                   <span>ETA {a.etaMin} min</span>
                 </li>
@@ -185,7 +222,6 @@ export function ResultCard({
         </div>
       )}
 
-      {/* Notes */}
       {result.notes?.length ? (
         <p className="mt-1 text-xs text-slate-500">
           {result.notes.join(" · ")}
