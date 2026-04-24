@@ -1,6 +1,6 @@
 // app/api/forecast/route.ts
 import { NextResponse } from "next/server";
-import { computeSample } from "../analyze/_shared";
+import { computeSample, getLastRoutesError } from "../analyze/_shared";
 import type { WaypointInput } from "@/types/analyze";
 
 export const runtime = "nodejs";
@@ -156,9 +156,12 @@ export async function POST(req: Request) {
   );
 
   if (!samples.length) {
-    // Nota: computeSample ya hace console.error en el server log (status/text del fallo)
     return NextResponse.json(
-      { error: "no forecast", requested: offsets.length },
+      {
+        error: "no forecast",
+        requested: offsets.length,
+        upstream: getLastRoutesError(),
+      },
       { status: 502 },
     );
   }

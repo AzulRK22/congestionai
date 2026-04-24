@@ -29,7 +29,7 @@ export default function HomeClient() {
 
   return (
     <section className="space-y-6">
-      <SectionCard className="hero-mesh overflow-hidden">
+      <SectionCard className="hero-mesh">
         <div className="grid gap-6 lg:grid-cols-[1.15fr_0.85fr] lg:items-center">
           <div className="space-y-5">
             <span className="eyebrow">Departure intelligence</span>

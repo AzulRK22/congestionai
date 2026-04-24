@@ -33,7 +33,7 @@ jobs:
         run: pnpm -C web lint
 
       - name: Typecheck
-        run: pnpm -C web typecheck || true
+        run: pnpm -C web typecheck
 
       - name: Build
         env:

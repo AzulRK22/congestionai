@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { computeSample, type SampleOut } from "./_shared";
+import { computeSample, getLastRoutesError, type SampleOut } from "./_shared";
 import type { AnalyzeResponse, WaypointInput } from "@/types/analyze";
 
 export const runtime = "nodejs";
@@ -93,7 +93,14 @@ export async function POST(req: NextRequest) {
   }
 
   if (!samples.length) {
-    return NextResponse.json({ error: "no routes" }, { status: 502 });
+    const upstream = getLastRoutesError();
+    return NextResponse.json(
+      {
+        error: "no routes",
+        upstream,
+      },
+      { status: 502 },
+    );
   }
 
   let ranked: RankedSample[] = [...samples];

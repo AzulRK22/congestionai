@@ -13,7 +13,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="es">
+    <html lang="es" data-scroll-behavior="smooth">
       <body className="min-h-screen text-slate-900">
         <header className="sticky top-0 z-20 border-b border-white/40 bg-[rgba(248,246,241,0.72)] backdrop-blur-xl">
           <div className="mx-auto flex max-w-5xl items-center justify-between px-4 py-3">

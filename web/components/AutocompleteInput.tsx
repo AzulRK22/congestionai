@@ -57,20 +57,21 @@ export const AutocompleteInput = forwardRef<HTMLInputElement, Props>(
     const inputRef = useRef<HTMLInputElement>(null);
     useImperativeHandle(ref, () => inputRef.current as HTMLInputElement);
 
-    const { ready, preds, query, select, clear, status, error } =
+    const { ready, preds, query, select, clear, status, error, isQuerying } =
       usePlacesAutocomplete(countryHint);
 
     const [openLocal, setOpenLocal] = useState(false);
     const [hi, setHi] = useState(-1);
     const q = value ?? "";
     const debounced = useDebounce(q, 220);
+    const lastRequestedRef = useRef("");
 
     const isActive = activeId ? activeId === selfId : true;
     const open = openLocal && isActive && preds.length > 0;
     const showHelper =
       isActive &&
-      q.trim().length >= 3 &&
-      (status === "loading" || !!error || (ready && openLocal && !preds.length));
+      debounced.trim().length >= 3 &&
+      (isQuerying || !!error || (ready && openLocal && !preds.length));
 
     const listId = `${id ?? selfId}-listbox`;
     const activeOptId =
@@ -89,18 +90,21 @@ export const AutocompleteInput = forwardRef<HTMLInputElement, Props>(
         clear();
         return;
       }
-      const text = q.trim();
-      const isCoord = coordRe.test(text);
+      const text = debounced.trim();
+      const isCoord = coordRe.test(q.trim());
       if (!ready || text.length < 3 || isCoord) {
+        lastRequestedRef.current = "";
         clear();
         setOpenLocal(false);
         return;
       }
-      query(debounced);
+      if (lastRequestedRef.current === text) return;
+      lastRequestedRef.current = text;
+      query(text);
       setOpenLocal(true);
       setHi(-1);
       // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [debounced, q, ready, isActive]);
+    }, [debounced, ready, isActive]);
 
     usePointerDownOutside(containerRef, () => {
       if (openLocal) setOpenLocal(false);
@@ -113,6 +117,7 @@ export const AutocompleteInput = forwardRef<HTMLInputElement, Props>(
         onChange(`@${v.trim()}`);
       else onChange(v);
       if (v.trim().length < 3) {
+        lastRequestedRef.current = "";
         setOpenLocal(false);
         setActiveId?.(null);
       }
@@ -120,6 +125,7 @@ export const AutocompleteInput = forwardRef<HTMLInputElement, Props>(
 
     function handleSelect(text: string) {
       suppressNextRef.current = true;
+      lastRequestedRef.current = "";
       onChange(text);
       select(); // reset token + limpia preds
       setOpenLocal(false);
@@ -221,6 +227,7 @@ export const AutocompleteInput = forwardRef<HTMLInputElement, Props>(
               onClick={() => {
                 onChange("");
                 clear();
+                lastRequestedRef.current = "";
                 setOpenLocal(false);
                 setActiveId?.(selfId);
                 inputRef.current?.focus();
@@ -235,7 +242,7 @@ export const AutocompleteInput = forwardRef<HTMLInputElement, Props>(
 
         {/* Dropdown */}
         {open && (
-          <div className="absolute z-50 mt-2 w-full rounded-xl border border-slate-200 bg-white shadow-xl ring-1 ring-black/5 overflow-hidden">
+          <div className="absolute left-0 right-0 top-full z-50 mt-2 w-full rounded-xl border border-slate-200 bg-white shadow-xl ring-1 ring-black/5 overflow-hidden">
             <ul id={listId} role="listbox" className="max-h-72 overflow-auto">
               {(preds as Pred[]).map((p, i) => {
                 const optId = `${selfId}-opt-${p.place_id}`;
@@ -283,11 +290,14 @@ export const AutocompleteInput = forwardRef<HTMLInputElement, Props>(
         )}
 
         {showHelper && !open && (
-          <div className="mt-2 rounded-2xl border border-slate-200 bg-white/80 px-3 py-2 text-xs text-slate-600">
-            {status === "loading" && "Buscando sugerencias..."}
-            {status !== "loading" &&
+          <div
+            aria-live="polite"
+            className="pointer-events-none absolute left-0 right-0 top-full z-40 mt-2 rounded-2xl border border-slate-200 bg-white/95 px-3 py-2 text-xs text-slate-600 shadow-sm"
+          >
+            {isQuerying && "Buscando sugerencias..."}
+            {!isQuerying &&
               (error ||
-                "Sin sugerencias por ahora. Prueba con una direccion mas completa.")}
+                `Sin sugerencias por ahora. Prueba con una direccion mas completa. (${preds.length} resultados)`)}
           </div>
         )}
       </div>

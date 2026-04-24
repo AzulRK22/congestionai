@@ -1,128 +1,133 @@
 # CongestionAI — AI-Powered Departure Advisor & 72h Congestion Forecast
 
-CongestionAI is an AI-assisted mobility planner that helps users decide **when to leave**, using traffic-aware sampling, short-term forecasting, and a clean Next.js interface.  
-Select origin/destination, configure your window, and get the **best departure**, predicted ETA, risk levels, and savings (time, fuel, CO₂).  
-Built for **Hack-Nation 2025 (Venture Track)** to demonstrate proactive, data-driven mobility decisions.
+CongestionAI is an AI-assisted mobility planner that helps users decide when to leave, using traffic-aware sampling, short-term forecasting, and a clean Next.js interface.
+Select origin and destination, configure your window, and get the best departure, predicted ETA, risk levels, and savings in time, fuel, and CO2.
+Built for Hack-Nation 2025 (Venture Track) to demonstrate proactive, data-driven mobility decisions.
 
-## 🔍 What the MVP Includes
+## What the MVP Includes
 
 ### Plan
-- Origin/Destination (address, @lat,lng, or placeId)
-- Window, Step, Budget mode
-- Avoid tolls/highways
+
+- Origin and destination with address, `@lat,lng`, or `placeId`
+- Window, step, and budget mode
+- Avoid tolls and avoid highways
 
 ### Result
-- Best departure (ETA + risk)
-- Advisor chart (ETA line + risk heatmap)
-- Chips: Weekend / Holiday context
-- Add to calendar (.ics), Share, Save
+
+- Best departure with ETA and risk
+- Advisor chart with ETA line and risk heatmap
+- Weekend and holiday context chips
+- Add to calendar, share, and save
 
 ### History
-- List + search + range filter
-- Time/Fuel/CO₂/Money savings
-- Pin, Replan, Open, Delete
-- Import/Export JSON
+
+- List, search, and range filter
+- Time, fuel, CO2, and money savings
+- Pin, replan, open, delete, import, and export JSON
 
 ### Settings
-- Map provider, Units, Country, Locale
-- Savings model: fuel price, L/100km, trip distance
-- Planner defaults (window, step, avoid tolls/highways)
-- Import/Export/Reset
 
-## 🧠 Why It Matters
-Congestion drives massive economic and environmental costs.  
-Predictive departure planning helps fleets, cities, and drivers take informed, efficient, and sustainable actions.
+- Map provider, units, country, and locale
+- Savings model with fuel price, L/100km, and trip distance
+- Planner defaults for window, step, and route preferences
+- Import, export, and reset
 
-## 🗺 API Endpoints
-- **/api/analyze** — traffic-aware window sampling (Google Routes v2)
-- **/api/forecast** — 72h forecast + top-3 windows
+## Why It Matters
 
-## 🖼 Screenshots
+Congestion drives major economic and environmental costs.
+Predictive departure planning helps fleets, cities, and drivers make informed, efficient, and sustainable decisions before traffic peaks.
 
-<p align="center">
-  <img src="web/public/media/plan.jpg" alt="Plan screen" width="420" />
-  <img src="web/public/media/result1.jpg" alt="Result 1" width="420" />
-  <img src="web/public/media/result2.jpg" alt="Result 2" width="420" />
-</p>
+## API Endpoints
 
-<p align="center">
-  <img src="web/public/media/result3.jpg" alt="Result 3" width="420" />
-  <img src="web/public/media/history.jpg" alt="History screen" width="420" />
-  <img src="web/public/media/settings.jpg" alt="Settings screen" width="420" />
-</p>
+- `/api/analyze` — traffic-aware window sampling with Google Routes v2
+- `/api/forecast` — 72-hour forecast with top windows
 
-**What you’re seeing**
+## What You’re Seeing
 
-- **Plan** — planning/setup view
-- **Result 1–3** — evaluation panel (“Don’t leave yet” / “OK to go”) + suggested wait
-- **History** — previous evaluations
-- **Settings** — configuration
+- `Plan` — planning and setup view
+- `Result` — evaluation panel with go-now guidance and alternatives
+- `History` — previous evaluations
+- `Settings` — configuration and defaults
 
-## Why it matters
+## Tech Stack
 
-Congestion costs billions in time and fuel. Forecasting and advising **before** gridlock enables:
+- Next.js 15
+- React
+- TypeScript
+- Tailwind CSS
+- Google Routes API v2
+- Local and session storage for cache, history, and settings
 
-- Fleets to **shift departures** and **pre-position** assets.
-- Cities to adjust **signage/control** before peaks.
-- Drivers to reduce **time, fuel, and CO₂**.
+## Getting Started
 
----
-
-## Tech stack
-
-- **Next.js 15**, React, TypeScript, Tailwind.
-- **Google Routes API v2** (traffic-aware).
-- No heavy chart libs: custom **SVG** for speed and portability.
-- Local/session storage for cache, settings, history.
-
----
-## 🛠 Getting Started
-
-pnpm install  
+```bash
+pnpm install
+cp web/.env.example web/.env.local
 pnpm dev
+```
 
-### .env
-Create .env:
-    # Client (optional but recommended for map components)
-    NEXT_PUBLIC_GOOGLE_MAPS_API_KEY=...
+## Environment Variables
 
-    # Apple MapKit (optional)
-    # NEXT_PUBLIC_MAPKIT_TOKEN=...
+Create `web/.env.local`:
 
-    # Server (required for /api/ana
+```env
+# Client
+NEXT_PUBLIC_GOOGLE_MAPS_API_KEY=...
 
-## Scripts## Scripts
-- `pnpm dev` — dev
-- `pnpm build` — prod
-- `pnpm start` — server
+# Optional Apple MapKit
+# NEXT_PUBLIC_MAPKIT_TOKEN=...
+
+# Server
+GOOGLE_MAPS_API_KEY_SERVER=...
+```
+
+Required Google APIs:
+
+- `Routes API` for `/api/analyze` and `/api/forecast`
+- `Places API (New)` for the autocomplete endpoint
+- `Maps JavaScript API` for client-side maps
+
+## Scripts
+
+- `pnpm dev` — development
+- `pnpm build` — production build
+- `pnpm start` — production server
+- `pnpm lint` — lint the app
+- `pnpm typecheck` — run TypeScript checks
 
 ## Configuration
-All defaults live in Settings (persisted in localStorage):
-  •	Country → Holiday-aware risk (🇲🇽 mx, 🇺🇸 us, 🇩🇪 de).
-  •	Units/Locale → Numbers, currency, and labels.
-  •	Savings model → Fuel price, L/100km, typical trip distance.```
 
-## Holiday awareness
-  •	Minimal curated sets in lib/events/holidays.ts.
-  •	Driven by Settings → Country.
-  •	Reflected in Result via chips and in risk scoring features.
-## What-if (planned)
-  •	Compare current best vs shifted departure (±X minutes) with $ / CO₂ / time deltas.
-  •	Event injection (concerts/holidays) for scenario testing.
-## Known limitations
-  •	Forecast relies on sampling Google Routes (no raw historical speed DB).
-  •	Holiday lists are demo-size; expand per country for production.
-  •	No server DB; history/settings live in the browser.
+All defaults live in Settings and persist in localStorage:
 
-## 🧪 Demo script (for judges)
-  1. Open Plan → CDMX → Puebla → Window 120 / Step 10 → Plan.
-  2. In Result: show Best, the Advisor, chips Holiday/Weekend, Save, Add to calendar.
-  3. Open History: view metrics and the saved item; use Replan.
-  4. Show Settings: change Country to us and explain how it impacts risk/holiday and cache.
-  5. Go to Forecast: show 72h and “Plan that window”.
+- Country for holiday-aware risk
+- Units and locale for formatting
+- Savings model for fuel and trip assumptions
 
-## 🤝 Contributing
-  PRs welcome. Standards: Strict TypeScript, ESLint, Tailwind.
+## Holiday Awareness
 
-## License
+- Minimal curated holiday sets live in `web/lib/events/holidays.ts`
+- Driven by Settings → Country
+- Reflected in result chips and risk scoring
 
+## What-if Ideas
+
+- Compare best departure vs shifted departures with deltas in time, cost, and CO2
+- Event injection for holidays, concerts, or special traffic scenarios
+
+## Known Limitations
+
+- Forecasts rely on sampled Google Routes data, not a historical speed database
+- Holiday lists are still demo-sized
+- No server database yet; history and settings live in the browser
+
+## Demo Script
+
+1. Open Plan and try CDMX to Puebla with a 120-minute window and 10-minute step.
+2. In Result, show the best departure, advisor chart, holiday/weekend chips, save, and calendar action.
+3. Open History to review metrics and replan a saved trip.
+4. Open Settings and change Country to explain how it affects holiday-aware scoring.
+5. Open Forecast and show the best 72-hour windows.
+
+## Contributing
+
+PRs are welcome. Standards: strict TypeScript, ESLint, and Tailwind.

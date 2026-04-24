@@ -129,6 +129,17 @@ export type SampleOut = {
   sri: SpeedReadingInterval[];
 };
 
+type RoutesErrorDetail = {
+  status: number;
+  message: string;
+};
+
+let lastRoutesError: RoutesErrorDetail | null = null;
+
+export function getLastRoutesError() {
+  return lastRoutesError;
+}
+
 export async function computeSample(
   opts: ComputeSampleOptions,
 ): Promise<SampleOut | null> {
@@ -159,9 +170,14 @@ export async function computeSample(
 
   if (!res.ok) {
     const text = await res.text().catch(() => "");
-    console.error("Routes API error:", res.status, text);
+    lastRoutesError = {
+      status: res.status,
+      message: text || "Routes API request failed",
+    };
     return null;
   }
+
+  lastRoutesError = null;
 
   const json = (await res.json()) as ComputeRoutesResponse;
   const r = json.routes?.[0];

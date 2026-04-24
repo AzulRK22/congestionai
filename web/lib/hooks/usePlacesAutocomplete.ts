@@ -1,36 +1,84 @@
 // web/hooks/usePlacesAutocomplete.ts
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { ensureGoogleMaps } from "@/lib/map/loaders";
 
 type Status = "idle" | "loading" | "ready" | "error";
-export type Prediction = google.maps.places.AutocompletePrediction;
-type PlacesCtorLib = {
-  AutocompleteService?: new () => google.maps.places.AutocompleteService;
-  AutocompleteSessionToken?: new () => google.maps.places.AutocompleteSessionToken;
+type Provider = "new-js" | "legacy-js" | "server" | "none";
+
+export type Prediction = {
+  place_id: string;
+  description: string;
+  structured_formatting?: {
+    main_text?: string;
+    secondary_text?: string;
+  };
 };
 
-export function usePlacesAutocomplete(countryHint: string[] = ["mx"]) {
-  const svc = useRef<google.maps.places.AutocompleteService | null>(null);
-  const token = useRef<google.maps.places.AutocompleteSessionToken | null>(
-    null,
-  );
-  const geoCenter = useRef<google.maps.LatLng | null>(null);
+type PlacesCtorLib = {
+  AutocompleteSessionToken?: new () => unknown;
+  AutocompleteService?: new () => {
+    getPlacePredictions: (
+      request: { input: string; sessionToken?: unknown },
+      callback: (
+        results: Array<{
+          place_id: string;
+          description: string;
+          structured_formatting?: {
+            main_text?: string;
+            secondary_text?: string;
+          };
+        }> | null,
+        status: google.maps.places.PlacesServiceStatus,
+      ) => void,
+    ) => void;
+  };
+  PlacesServiceStatus?: typeof google.maps.places.PlacesServiceStatus;
+  AutocompleteSuggestion?: {
+    fetchAutocompleteSuggestions: (request: {
+      input: string;
+      sessionToken?: unknown;
+      includedRegionCodes?: string[];
+      language?: string;
+    }) => Promise<{
+      suggestions?: Array<{
+        placePrediction?: {
+          placeId?: string;
+          text?: { text?: string; toString?: () => string };
+          mainText?: { text?: string; toString?: () => string };
+          secondaryText?: { text?: string; toString?: () => string };
+        };
+      }>;
+    }>;
+  };
+};
+
+type ServerResponse = {
+  suggestions?: Prediction[];
+  error?: string;
+  detail?: string;
+};
+
+export function usePlacesAutocomplete(countryHint?: string[]) {
+  const token = useRef<unknown>(null);
+  const placesRef = useRef<PlacesCtorLib | null>(null);
+  const legacySvcRef = useRef<InstanceType<NonNullable<PlacesCtorLib["AutocompleteService"]>> | null>(null);
+  const providerRef = useRef<Provider>("none");
 
   const [status, setStatus] = useState<Status>("idle");
   const [preds, setPreds] = useState<Prediction[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [isQuerying, setIsQuerying] = useState(false);
   const ready = status === "ready";
 
-  // Carga Places y prepara servicio + token
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
         setStatus("loading");
         setError(null);
-        const libs = await ensureGoogleMaps(["places"]);
+        const libs = await ensureGoogleMaps(["maps", "places"]);
         if (cancelled) return;
 
         const places =
@@ -38,26 +86,35 @@ export function usePlacesAutocomplete(countryHint: string[] = ["mx"]) {
           ((window as unknown as { google?: typeof google }).google?.maps
             ?.places as PlacesCtorLib | undefined);
 
+        placesRef.current = places ?? null;
+
         if (
-          !places?.AutocompleteService ||
-          !places.AutocompleteSessionToken
+          places?.AutocompleteSuggestion?.fetchAutocompleteSuggestions &&
+          places.AutocompleteSessionToken
         ) {
-          setError(
-            "Autocomplete no disponible. Puedes escribir la direccion completa.",
-          );
-          setStatus("error");
+          providerRef.current = "new-js";
+          token.current = new places.AutocompleteSessionToken();
+          setStatus("ready");
+          setError(null);
           return;
         }
 
-        svc.current = new places.AutocompleteService();
-        token.current = new places.AutocompleteSessionToken();
-        setError(null);
+        if (places?.AutocompleteService && places.AutocompleteSessionToken) {
+          providerRef.current = "legacy-js";
+          legacySvcRef.current = new places.AutocompleteService();
+          token.current = new places.AutocompleteSessionToken();
+          setStatus("ready");
+          setError(null);
+          return;
+        }
+
+        providerRef.current = "server";
         setStatus("ready");
+        setError(null);
       } catch {
-        setError(
-          "No se pudo conectar con Google Places. Puedes seguir escribiendo manualmente.",
-        );
-        setStatus("error");
+        providerRef.current = "server";
+        setStatus("ready");
+        setError(null);
       }
     })();
     return () => {
@@ -65,38 +122,49 @@ export function usePlacesAutocomplete(countryHint: string[] = ["mx"]) {
     };
   }, []);
 
-  // Obtener ubicación una vez para sesgo (opcional)
-  useEffect(() => {
-    if (!navigator.geolocation || geoCenter.current) return;
-    navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        const g = (window as unknown as { google?: typeof google }).google;
-        const maps = g?.maps;
-        if (!maps?.LatLng) return;
-        geoCenter.current = new maps.LatLng(
-          pos.coords.latitude,
-          pos.coords.longitude,
-        );
-      },
-      () => {},
-      { enableHighAccuracy: true, timeout: 5000, maximumAge: 600000 },
-    );
-  }, []);
+  const reqIdRef = useRef(0);
 
-  // Restricción por país (tipado correcto)
-  const componentRestrictions = useMemo<
-    google.maps.places.ComponentRestrictions | undefined
-  >(
-    () => (countryHint.length ? { country: countryHint } : undefined),
+  const queryViaServer = useCallback(
+    async (text: string, myReqId: number) => {
+      const res = await fetch("/api/places-autocomplete", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          input: text,
+          countryHint,
+          sessionToken:
+            typeof token.current === "string" ? token.current : undefined,
+        }),
+      });
+
+      if (myReqId !== reqIdRef.current) return;
+      const data = (await res.json().catch(() => ({}))) as ServerResponse;
+      const next = data.suggestions ?? [];
+      if (!res.ok) {
+        setError(
+          data.detail ??
+            data.error ??
+            "No se pudo consultar Places en el servidor.",
+        );
+        setPreds((p) => (p.length ? [] : p));
+        return;
+      }
+      if (!next.length) {
+        setError("Sin sugerencias. Prueba otra forma de escribir el lugar.");
+        setPreds((p) => (p.length ? [] : p));
+        return;
+      }
+      setError(null);
+      setPreds(next);
+    },
     [countryHint],
   );
 
-  // requestId para descartar respuestas viejas
-  const reqIdRef = useRef(0);
-
   const query = useCallback(
     (input: string) => {
-      if (!ready || !svc.current) {
+      if (!ready) {
         setPreds((p) => (p.length ? [] : p));
         return;
       }
@@ -107,70 +175,120 @@ export function usePlacesAutocomplete(countryHint: string[] = ["mx"]) {
         return;
       }
 
-      const g = (window as unknown as { google?: typeof google }).google;
-      const maps = g?.maps;
-      if (!maps) return;
-
       const myReqId = ++reqIdRef.current;
+      setIsQuerying(true);
+      setError(null);
 
-      // AutocompletionRequest tipado
-      const req: google.maps.places.AutocompletionRequest = {
-        input: text,
-        sessionToken: token.current ?? undefined,
-        componentRestrictions,
-        // Tipos comunes y aceptados por AutocompleteService
-        types: ["geocode", "establishment"],
-        // Sesgo de ubicación (API clásica): center + radius (m)
-        location: geoCenter.current ?? undefined,
-        radius: geoCenter.current ? 20000 : undefined,
-      };
+      if (
+        providerRef.current === "new-js" &&
+        placesRef.current?.AutocompleteSuggestion?.fetchAutocompleteSuggestions
+      ) {
+        const includedRegionCodes = (countryHint ?? [])
+          .map((value) => value.trim().toLowerCase())
+          .filter((value) => value.length === 2)
+          .slice(0, 5);
 
-      svc.current.getPlacePredictions(
-        req,
-        (
-          results: google.maps.places.AutocompletePrediction[] | null,
-          st: google.maps.places.PlacesServiceStatus,
-        ) => {
-          if (myReqId !== reqIdRef.current) return; // respuesta vieja
+        void placesRef.current.AutocompleteSuggestion.fetchAutocompleteSuggestions(
+          {
+            input: text,
+            sessionToken: token.current ?? undefined,
+            includedRegionCodes: includedRegionCodes.length
+              ? includedRegionCodes
+              : undefined,
+            language: "es",
+          },
+        )
+          .then((response) => {
+            if (myReqId !== reqIdRef.current) return;
+            const next = (response?.suggestions ?? [])
+              .map((item) => item.placePrediction)
+              .filter(Boolean)
+              .map((prediction) => ({
+                place_id: prediction?.placeId ?? "",
+                description:
+                  prediction?.text?.text ??
+                  prediction?.text?.toString?.() ??
+                  "",
+                structured_formatting: {
+                  main_text:
+                    prediction?.mainText?.text ??
+                    prediction?.mainText?.toString?.(),
+                  secondary_text:
+                    prediction?.secondaryText?.text ??
+                    prediction?.secondaryText?.toString?.(),
+                },
+              }))
+              .filter((item) => item.place_id && item.description);
 
-          if (
-            st !== google.maps.places.PlacesServiceStatus.OK ||
-            !results?.length
-          ) {
-            if (
-              st === google.maps.places.PlacesServiceStatus.ZERO_RESULTS ||
-              !results?.length
-            ) {
-              setError("Sin sugerencias. Prueba otra forma de escribir el lugar.");
-            } else if (
-              st === google.maps.places.PlacesServiceStatus.REQUEST_DENIED
-            ) {
+            if (!next.length) {
               setError(
-                "Google Places rechazo la solicitud. Revisa tu API key y restricciones.",
+                "Sin sugerencias desde AutocompleteSuggestion. Intentando fallback...",
               );
-              setStatus("error");
-            } else if (
-              st === google.maps.places.PlacesServiceStatus.OVER_QUERY_LIMIT
-            ) {
-              setError("Se alcanzo el limite de consultas de Google Places.");
-            } else {
-              setError("No pudimos obtener sugerencias en este momento.");
+              providerRef.current = "server";
+              void queryViaServer(text, myReqId).finally(() => {
+                if (myReqId === reqIdRef.current) setIsQuerying(false);
+              });
+              return;
             }
-            setPreds((p) => (p.length ? [] : p));
-            return;
-          }
-          setError(null);
-          setPreds(results);
-        },
-      );
+
+            setError(null);
+            setPreds(next);
+            setIsQuerying(false);
+          })
+          .catch(() => {
+            if (myReqId !== reqIdRef.current) return;
+            providerRef.current = "server";
+            void queryViaServer(text, myReqId).finally(() => {
+              if (myReqId === reqIdRef.current) setIsQuerying(false);
+            });
+          });
+        return;
+      }
+
+      if (providerRef.current === "legacy-js" && legacySvcRef.current) {
+        legacySvcRef.current.getPlacePredictions(
+          {
+            input: text,
+            sessionToken: token.current ?? undefined,
+          },
+          (results, serviceStatus) => {
+            if (myReqId !== reqIdRef.current) return;
+            const okStatus =
+              placesRef.current?.PlacesServiceStatus?.OK ??
+              google.maps.places.PlacesServiceStatus.OK;
+            if (serviceStatus !== okStatus || !results?.length) {
+              providerRef.current = "server";
+              void queryViaServer(text, myReqId).finally(() => {
+                if (myReqId === reqIdRef.current) setIsQuerying(false);
+              });
+              return;
+            }
+            setError(null);
+            setPreds(results as Prediction[]);
+            setIsQuerying(false);
+          },
+        );
+        return;
+      }
+
+      void queryViaServer(text, myReqId).finally(() => {
+        if (myReqId === reqIdRef.current) setIsQuerying(false);
+      });
     },
-    [ready, componentRestrictions],
+    [countryHint, queryViaServer, ready],
   );
 
-  // Al seleccionar, nueva sesión (mejor billing/ranking)
   const select = useCallback(() => {
     try {
-      token.current = new google.maps.places.AutocompleteSessionToken();
+      const SessionToken = placesRef.current?.AutocompleteSessionToken;
+      if (SessionToken) {
+        token.current = new SessionToken();
+      } else {
+        token.current =
+          typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+            ? crypto.randomUUID()
+            : `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+      }
     } catch {
       /* noop */
     }
@@ -178,9 +296,19 @@ export function usePlacesAutocomplete(countryHint: string[] = ["mx"]) {
   }, []);
 
   const clear = useCallback(() => {
+    setIsQuerying(false);
     setError(null);
     setPreds((p) => (p.length ? [] : p));
   }, []);
 
-  return { ready, preds, query, select, clear, status, error };
+  return {
+    ready,
+    preds,
+    query,
+    select,
+    clear,
+    status,
+    error,
+    isQuerying,
+  };
 }

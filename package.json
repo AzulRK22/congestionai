@@ -6,6 +6,7 @@
     "dev": "pnpm --filter congestionai-web dev",
     "build": "pnpm --filter congestionai-web build",
     "start": "pnpm --filter congestionai-web start",
-    "lint": "pnpm --filter congestionai-web lint"
+    "lint": "pnpm --filter congestionai-web lint",
+    "typecheck": "pnpm --filter congestionai-web typecheck"
   }
 }

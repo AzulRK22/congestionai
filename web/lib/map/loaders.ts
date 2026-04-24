@@ -3,6 +3,7 @@
 // Tipado estricto sin `any` y compatible con SSR.
 
 let scriptPromise: Promise<void> | null = null;
+
 type GLib = "core" | "maps" | "places" | "routes";
 
 type CoreLib = {
@@ -35,7 +36,6 @@ const GOOGLE_SCRIPT_ID = "gmaps-js-sdk";
 function injectGoogleScript(): Promise<void> {
   if (scriptPromise) return scriptPromise;
   if (typeof window === "undefined") {
-    // SSR: no insertar nada
     scriptPromise = Promise.resolve();
     return scriptPromise;
   }
@@ -53,12 +53,10 @@ function injectGoogleScript(): Promise<void> {
     key: apiKey,
     v: "weekly",
     loading: "async",
-    // Para el fallback de globals; importLibrary ignora este parámetro, pero no estorba.
     libraries: "maps,places,routes",
   });
 
   scriptPromise = new Promise((resolve, reject) => {
-    // Evita insertar múltiples veces
     const existing = document.getElementById(
       GOOGLE_SCRIPT_ID,
     ) as HTMLScriptElement | null;
@@ -90,7 +88,16 @@ export async function ensureGoogleMaps(
 
   const gmaps = (
     window as unknown as {
-      google?: { maps?: { importLibrary?: (n: string) => Promise<unknown> } };
+      google?: {
+        maps?: {
+          importLibrary?: (n: string) => Promise<unknown>;
+          Map?: MapsLib["Map"];
+          Polyline?: MapsLib["Polyline"];
+          Marker?: MapsLib["Marker"];
+          LatLngBounds?: CoreLib["LatLngBounds"];
+          places?: PlacesLib;
+        };
+      };
     }
   ).google?.maps;
 
@@ -107,13 +114,19 @@ export async function ensureGoogleMaps(
       const v = libCache[L];
       if (L === "core") out.core = v as CoreLib;
       else if (L === "maps") out.maps = v as MapsLib;
-      else if (L === "places") out.places = v as PlacesLib;
+      else if (L === "places") {
+        out.places = v as PlacesLib;
+        const w = window as unknown as {
+          google?: { maps?: { places?: PlacesLib } };
+        };
+        if (w.google?.maps && !w.google.maps.places) {
+          w.google.maps.places = v as PlacesLib;
+        }
+      }
       else if (L === "routes") out.routes = v as RoutesLib;
     }
-    return out;
   }
 
-  // Fallback: constructores globales clásicos
   const gg = (
     window as unknown as {
       google?: {
